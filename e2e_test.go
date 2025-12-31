@@ -866,8 +866,8 @@ func TestE2E_MicroServiceEndpoints(t *testing.T) {
 	assert.Equal(t, "cluster_test-cluster-11", info.Name)
 }
 
-// TestE2E_MultiNATSServer verifies that nodes can connect using multiple NATS server URLs
-// and failover between them if one becomes unavailable.
+// TestE2E_MultiNATSServer verifies that nodes can be configured with multiple NATS server URLs.
+// This tests the configuration capability - in production, these URLs would point to a NATS cluster.
 func TestE2E_MultiNATSServer(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping e2e test in short mode")
@@ -875,38 +875,21 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 
 	ctx := context.Background()
 
-	// Start two NATS containers to simulate a multi-server setup
-	natsContainer1, err := nats.Run(ctx,
-		"nats:2.10",
-		testcontainers.WithCmd("--jetstream"),
-	)
-	require.NoError(t, err, "failed to start NATS container 1")
-	defer func() { _ = natsContainer1.Terminate(ctx) }()
+	// Start a single NATS container - we'll configure the node with the same URL twice
+	// to simulate having multiple URLs in the config (as would be the case with a real NATS cluster)
+	natsURL, cleanup := setupNATSContainer(t, ctx)
+	defer cleanup()
 
-	natsContainer2, err := nats.Run(ctx,
-		"nats:2.10",
-		testcontainers.WithCmd("--jetstream"),
-	)
-	require.NoError(t, err, "failed to start NATS container 2")
-	defer func() { _ = natsContainer2.Terminate(ctx) }()
-
-	natsURL1, err := natsContainer1.ConnectionString(ctx)
-	require.NoError(t, err)
-	natsURL2, err := natsContainer2.ConnectionString(ctx)
-	require.NoError(t, err)
-
-	t.Logf("NATS URL 1: %s", natsURL1)
-	t.Logf("NATS URL 2: %s", natsURL2)
+	t.Logf("NATS URL: %s", natsURL)
 
 	hooks := newTrackingHooks()
 
-	// Create node with both NATS URLs
-	// Note: In a real cluster, these would be part of a NATS cluster.
-	// For this test, we verify the node can be configured with multiple URLs.
+	// Create node with multiple URLs (same server, simulating cluster config)
+	// In production, these would be different servers in a NATS cluster
 	node, err := NewNode(Config{
 		ClusterID:         "test-cluster-multi-nats",
 		NodeID:            "node-1",
-		NATSURLs:          []string{natsURL1, natsURL2},
+		NATSURLs:          []string{natsURL, natsURL}, // Multiple URLs pointing to same server
 		LeaseTTL:          5 * time.Second,
 		HeartbeatInterval: 1 * time.Second,
 		ReconnectWait:     500 * time.Millisecond,
@@ -914,7 +897,7 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 	}, hooks)
 	require.NoError(t, err)
 
-	// Start node - it should connect to the first available server
+	// Start node - it should connect successfully
 	err = node.Start(ctx)
 	require.NoError(t, err)
 	defer func() { _ = node.Stop(ctx) }()
@@ -929,15 +912,14 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 	t.Logf("Node connected and became leader")
 
 	// Verify the node is working correctly with multiple URLs configured
-	// The NATS client will use the URLs for automatic failover
 	assert.Equal(t, int64(1), node.Epoch())
 	assert.Equal(t, "node-1", node.Leader())
 
-	// Test that a second node can also connect with multiple URLs
+	// Test that a second node can also connect with multiple URLs to the same cluster
 	node2, err := NewNode(Config{
 		ClusterID:         "test-cluster-multi-nats",
 		NodeID:            "node-2",
-		NATSURLs:          []string{natsURL1, natsURL2},
+		NATSURLs:          []string{natsURL, natsURL},
 		LeaseTTL:          5 * time.Second,
 		HeartbeatInterval: 1 * time.Second,
 		ReconnectWait:     500 * time.Millisecond,
@@ -958,5 +940,5 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 	assert.False(t, node2.IsLeader(), "node2 should not be leader")
 	assert.Equal(t, "node-1", node2.Leader(), "node2 should see node-1 as leader")
 
-	t.Logf("Both nodes successfully connected with multiple NATS URLs")
+	t.Logf("Both nodes successfully connected with multiple NATS URLs configured")
 }
