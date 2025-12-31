@@ -67,7 +67,7 @@ func (n *Node) startWatcher(ctx context.Context) error {
 func (n *Node) stopWatcher() {
 	n.mu.Lock()
 	if n.watcher != nil {
-		n.watcher.Stop()
+		_ = n.watcher.Stop()
 		n.watcher = nil
 	}
 	n.mu.Unlock()

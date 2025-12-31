@@ -22,14 +22,12 @@ func startNATSContainer(ctx context.Context, t *testing.T) (string, func()) {
 
 	url, err := container.ConnectionString(ctx)
 	if err != nil {
-		container.Terminate(ctx)
+		_ = container.Terminate(ctx)
 		t.Fatalf("failed to get NATS connection string: %v", err)
 	}
 
 	cleanup := func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("failed to terminate NATS container: %v", err)
-		}
+		_ = container.Terminate(ctx)
 	}
 
 	// Verify connection works
@@ -284,7 +282,7 @@ func TestManagerDemote(t *testing.T) {
 	}
 
 	// Run daemon in background
-	go mgr.RunDaemon(ctx)
+	go func() { _ = mgr.RunDaemon(ctx) }()
 
 	// Wait for leadership
 	deadline := time.Now().Add(10 * time.Second)
@@ -347,7 +345,7 @@ func TestManagerLeave(t *testing.T) {
 	}
 
 	// Run daemon in background
-	go mgr.RunDaemon(ctx)
+	go func() { _ = mgr.RunDaemon(ctx) }()
 
 	// Wait for leadership
 	deadline := time.Now().Add(10 * time.Second)
@@ -385,7 +383,7 @@ func TestManagerAlreadyRunning(t *testing.T) {
 	}
 
 	// Run daemon in background
-	go mgr.RunDaemon(ctx)
+	go func() { _ = mgr.RunDaemon(ctx) }()
 
 	// Wait a bit for it to start
 	time.Sleep(500 * time.Millisecond)

@@ -113,7 +113,7 @@ func (s *Service) Start() error {
 	if err := srv.AddEndpoint("status", micro.HandlerFunc(s.handleStatus),
 		micro.WithEndpointSubject(statusSubject),
 	); err != nil {
-		srv.Stop()
+		_ = srv.Stop()
 		return fmt.Errorf("failed to add status endpoint: %w", err)
 	}
 
@@ -122,7 +122,7 @@ func (s *Service) Start() error {
 	if err := srv.AddEndpoint("ping", micro.HandlerFunc(s.handlePing),
 		micro.WithEndpointSubject(pingSubject),
 	); err != nil {
-		srv.Stop()
+		_ = srv.Stop()
 		return fmt.Errorf("failed to add ping endpoint: %w", err)
 	}
 
@@ -131,7 +131,7 @@ func (s *Service) Start() error {
 	if err := srv.AddEndpoint("stepdown", micro.HandlerFunc(s.handleStepdown),
 		micro.WithEndpointSubject(stepdownSubject),
 	); err != nil {
-		srv.Stop()
+		_ = srv.Stop()
 		return fmt.Errorf("failed to add stepdown endpoint: %w", err)
 	}
 
@@ -216,11 +216,11 @@ func (s *Service) handleStatus(req micro.Request) {
 	data, err := json.Marshal(resp)
 	if err != nil {
 		s.logger.Error("failed to marshal status response", "error", err)
-		req.Error("500", "internal error", nil)
+		_ = req.Error("500", "internal error", nil)
 		return
 	}
 
-	req.Respond(data)
+	_ = req.Respond(data)
 }
 
 // handlePing handles the ping endpoint requests.
@@ -233,11 +233,11 @@ func (s *Service) handlePing(req micro.Request) {
 	data, err := json.Marshal(resp)
 	if err != nil {
 		s.logger.Error("failed to marshal ping response", "error", err)
-		req.Error("500", "internal error", nil)
+		_ = req.Error("500", "internal error", nil)
 		return
 	}
 
-	req.Respond(data)
+	_ = req.Respond(data)
 }
 
 // handleStepdown handles the stepdown endpoint requests.
@@ -252,7 +252,7 @@ func (s *Service) handleStepdown(req micro.Request) {
 		}
 
 		data, _ := json.Marshal(resp)
-		req.Respond(data)
+		_ = req.Respond(data)
 		return
 	}
 
@@ -263,11 +263,11 @@ func (s *Service) handleStepdown(req micro.Request) {
 	data, err := json.Marshal(resp)
 	if err != nil {
 		s.logger.Error("failed to marshal stepdown response", "error", err)
-		req.Error("500", "internal error", nil)
+		_ = req.Error("500", "internal error", nil)
 		return
 	}
 
-	req.Respond(data)
+	_ = req.Respond(data)
 }
 
 // StatusSubject returns the subject for querying a node's status.

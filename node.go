@@ -136,7 +136,7 @@ func (n *Node) Stop(ctx context.Context) error {
 
 	// Stop micro service
 	if n.service != nil {
-		n.service.Stop()
+		_ = n.service.Stop()
 	}
 
 	// Stop watcher

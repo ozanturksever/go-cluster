@@ -718,12 +718,3 @@ func TestDefaultExecutor(t *testing.T) {
 	// We can't easily test actual command execution without side effects,
 	// so we just verify the interface is satisfied
 }
-
-func containsStringHelper(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}

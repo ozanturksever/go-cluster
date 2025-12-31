@@ -63,6 +63,7 @@ func TestE2E_TwoNodeFailover(t *testing.T) {
 	// Start both daemons
 	ctx1, cancel1 := context.WithCancel(ctx)
 	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel1()
 	defer cancel2()
 
 	errCh1 := make(chan error, 1)
@@ -190,7 +191,7 @@ func TestE2E_PromoteDemote(t *testing.T) {
 	ctx1, cancel1 := context.WithCancel(ctx)
 	defer cancel1()
 
-	go mgr1.RunDaemon(ctx1)
+	go func() { _ = mgr1.RunDaemon(ctx1) }()
 
 	// Wait for node1 to become leader
 	deadline := time.Now().Add(10 * time.Second)
@@ -209,7 +210,7 @@ func TestE2E_PromoteDemote(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(ctx)
 	defer cancel2()
 
-	go mgr2.RunDaemon(ctx2)
+	go func() { _ = mgr2.RunDaemon(ctx2) }()
 
 	// Wait a bit for node2 to connect
 	time.Sleep(2 * time.Second)
@@ -317,7 +318,7 @@ func TestE2E_VIPFailover(t *testing.T) {
 	ctx1, cancel1 := context.WithCancel(ctx)
 	defer cancel1()
 
-	go mgr1.RunDaemon(ctx1)
+	go func() { _ = mgr1.RunDaemon(ctx1) }()
 
 	// Wait for node1 to become leader
 	deadline := time.Now().Add(10 * time.Second)
@@ -342,7 +343,7 @@ func TestE2E_VIPFailover(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(ctx)
 	defer cancel2()
 
-	go mgr2.RunDaemon(ctx2)
+	go func() { _ = mgr2.RunDaemon(ctx2) }()
 	time.Sleep(2 * time.Second)
 
 	// Stop node1 (crash scenario - not graceful stepdown)
@@ -424,8 +425,8 @@ func TestE2E_StatusConsistency(t *testing.T) {
 	defer cancel1()
 	defer cancel2()
 
-	go mgr1.RunDaemon(ctx1)
-	go mgr2.RunDaemon(ctx2)
+	go func() { _ = mgr1.RunDaemon(ctx1) }()
+	go func() { _ = mgr2.RunDaemon(ctx2) }()
 
 	// Wait for one node to become leader (could be either)
 	deadline := time.Now().Add(10 * time.Second)
@@ -563,14 +564,12 @@ func startE2ENATSContainer(ctx context.Context, t *testing.T) (string, func()) {
 
 	url, err := container.ConnectionString(ctx)
 	if err != nil {
-		container.Terminate(ctx)
+		_ = container.Terminate(ctx)
 		t.Fatalf("failed to get NATS connection string: %v", err)
 	}
 
 	cleanup := func() {
-		if err := container.Terminate(ctx); err != nil {
-			t.Logf("failed to terminate NATS container: %v", err)
-		}
+		_ = container.Terminate(ctx)
 	}
 
 	return url, cleanup

@@ -103,12 +103,6 @@ func (h *trackingHooks) getLoseLeadershipCalls() int {
 	return h.loseLeadershipCalls
 }
 
-func (h *trackingHooks) getLeaderChangeCalls() int {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	return h.leaderChangeCalls
-}
-
 func (h *trackingHooks) getReconnectCalls() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -155,7 +149,7 @@ func TestE2E_SingleNodeBecomesLeader(t *testing.T) {
 
 	err = node.Start(ctx)
 	require.NoError(t, err)
-	defer node.Stop(ctx)
+	defer func() { _ = node.Stop(ctx) }()
 
 	// Wait for node to become leader
 	waitFor(t, 10*time.Second, func() bool {
@@ -202,11 +196,11 @@ func TestE2E_TwoNodes_OneBecomesLeader(t *testing.T) {
 	// Start both nodes
 	err = node1.Start(ctx)
 	require.NoError(t, err)
-	defer node1.Stop(ctx)
+	defer func() { _ = node1.Stop(ctx) }()
 
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for one node to become leader
 	waitFor(t, 10*time.Second, func() bool {
@@ -262,7 +256,7 @@ func TestE2E_LeaderStepDown_TriggersFailover(t *testing.T) {
 	// Start node1 first so it becomes leader
 	err = node1.Start(ctx)
 	require.NoError(t, err)
-	defer node1.Stop(ctx)
+	defer func() { _ = node1.Stop(ctx) }()
 
 	waitFor(t, 10*time.Second, func() bool {
 		return node1.IsLeader()
@@ -271,7 +265,7 @@ func TestE2E_LeaderStepDown_TriggersFailover(t *testing.T) {
 	// Now start node2
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Verify node1 is still leader
 	time.Sleep(2 * time.Second)
@@ -332,7 +326,7 @@ func TestE2E_EpochIncrementsOnFailover(t *testing.T) {
 	assert.Equal(t, int64(1), epoch1)
 
 	// Stop node1 (simulating crash - not graceful stepdown)
-	node1.Stop(ctx)
+	_ = node1.Stop(ctx)
 
 	// Start a new node with same timing config
 	node2, err := NewNode(Config{
@@ -346,7 +340,7 @@ func TestE2E_EpochIncrementsOnFailover(t *testing.T) {
 
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for node2 to become leader (needs to wait for lease expiry)
 	// With LeaseTTL=2s, the lease will expire after 2s and node2 can take over
@@ -388,7 +382,7 @@ func TestE2E_StepDownNotLeader(t *testing.T) {
 	// Start node1 first
 	err = node1.Start(ctx)
 	require.NoError(t, err)
-	defer node1.Stop(ctx)
+	defer func() { _ = node1.Stop(ctx) }()
 
 	waitFor(t, 10*time.Second, func() bool {
 		return node1.IsLeader()
@@ -397,7 +391,7 @@ func TestE2E_StepDownNotLeader(t *testing.T) {
 	// Start node2
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for node2 to see node1 as leader
 	waitFor(t, 5*time.Second, func() bool {
@@ -439,11 +433,11 @@ func TestE2E_CooldownPreventsImmediateReelection(t *testing.T) {
 	// Start both nodes
 	err = node1.Start(ctx)
 	require.NoError(t, err)
-	defer node1.Stop(ctx)
+	defer func() { _ = node1.Stop(ctx) }()
 
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for one to become leader
 	waitFor(t, 10*time.Second, func() bool {
@@ -555,7 +549,7 @@ func TestE2E_MultipleNodesCluster(t *testing.T) {
 	for i, node := range nodes {
 		err := node.Start(ctx)
 		require.NoError(t, err, "failed to start node %d", i+1)
-		defer node.Stop(ctx)
+		defer func(n *Node) { _ = n.Stop(ctx) }(node)
 	}
 
 	// Wait for exactly one leader
@@ -659,7 +653,7 @@ func TestE2E_LeaderRenewal(t *testing.T) {
 
 	err = node.Start(ctx)
 	require.NoError(t, err)
-	defer node.Stop(ctx)
+	defer func() { _ = node.Stop(ctx) }()
 
 	waitFor(t, 10*time.Second, func() bool {
 		return node.IsLeader()
@@ -687,7 +681,7 @@ func TestE2E_NATSReconnection(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err, "failed to start NATS container")
-	defer natsContainer.Terminate(ctx)
+	defer func() { _ = natsContainer.Terminate(ctx) }()
 
 	natsURL, err := natsContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -707,7 +701,7 @@ func TestE2E_NATSReconnection(t *testing.T) {
 
 	err = node.Start(ctx)
 	require.NoError(t, err)
-	defer node.Stop(ctx)
+	defer func() { _ = node.Stop(ctx) }()
 
 	// Wait for node to become leader and stabilize
 	waitFor(t, 10*time.Second, func() bool {
@@ -794,7 +788,7 @@ func TestE2E_FastFailover(t *testing.T) {
 	// Start node1 first to ensure it becomes leader
 	err = node1.Start(ctx)
 	require.NoError(t, err)
-	defer node1.Stop(ctx)
+	defer func() { _ = node1.Stop(ctx) }()
 
 	waitFor(t, 10*time.Second, func() bool {
 		return node1.IsLeader()
@@ -803,7 +797,7 @@ func TestE2E_FastFailover(t *testing.T) {
 	// Start node2 as follower
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for node2 to see node1 as leader
 	waitFor(t, 5*time.Second, func() bool {
@@ -857,7 +851,7 @@ func TestE2E_MicroServiceEndpoints(t *testing.T) {
 
 	err = node.Start(ctx)
 	require.NoError(t, err)
-	defer node.Stop(ctx)
+	defer func() { _ = node.Stop(ctx) }()
 
 	waitFor(t, 10*time.Second, func() bool {
 		return node.IsLeader()
@@ -887,14 +881,14 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err, "failed to start NATS container 1")
-	defer natsContainer1.Terminate(ctx)
+	defer func() { _ = natsContainer1.Terminate(ctx) }()
 
 	natsContainer2, err := nats.Run(ctx,
 		"nats:2.10",
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err, "failed to start NATS container 2")
-	defer natsContainer2.Terminate(ctx)
+	defer func() { _ = natsContainer2.Terminate(ctx) }()
 
 	natsURL1, err := natsContainer1.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -923,7 +917,7 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 	// Start node - it should connect to the first available server
 	err = node.Start(ctx)
 	require.NoError(t, err)
-	defer node.Stop(ctx)
+	defer func() { _ = node.Stop(ctx) }()
 
 	// Wait for node to become leader
 	waitFor(t, 10*time.Second, func() bool {
@@ -953,7 +947,7 @@ func TestE2E_MultiNATSServer(t *testing.T) {
 
 	err = node2.Start(ctx)
 	require.NoError(t, err)
-	defer node2.Stop(ctx)
+	defer func() { _ = node2.Stop(ctx) }()
 
 	// Wait for node2 to see node1 as leader
 	waitFor(t, 10*time.Second, func() bool {

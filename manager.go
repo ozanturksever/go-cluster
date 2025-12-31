@@ -24,7 +24,6 @@ type Manager struct {
 	running   bool
 	startedAt time.Time
 	stopCh    chan struct{}
-	wg        sync.WaitGroup
 
 	// vipExecutor allows injecting a mock executor for testing
 	vipExecutor vip.Executor
@@ -101,7 +100,7 @@ func (m *Manager) Join(ctx context.Context) error {
 	// Wait briefly to detect leader
 	select {
 	case <-ctx.Done():
-		node.Stop(ctx)
+		_ = node.Stop(ctx)
 		return ctx.Err()
 	case <-time.After(2 * time.Second):
 	}
@@ -113,7 +112,7 @@ func (m *Manager) Join(ctx context.Context) error {
 		m.logger.Info("joined cluster", "leader", leader)
 	}
 
-	node.Stop(ctx)
+	_ = node.Stop(ctx)
 	return nil
 }
 
@@ -141,12 +140,12 @@ func (m *Manager) Leave(ctx context.Context) error {
 
 		if tempNode.IsLeader() {
 			if err := tempNode.StepDown(ctx); err != nil {
-				tempNode.Stop(ctx)
+				_ = tempNode.Stop(ctx)
 				return fmt.Errorf("failed to step down: %w", err)
 			}
 		}
 
-		tempNode.Stop(ctx)
+		_ = tempNode.Stop(ctx)
 		m.logger.Info("left cluster")
 		return nil
 	}
@@ -189,12 +188,12 @@ func (m *Manager) Status(ctx context.Context) (*Status, error) {
 		if err := tempNode.Start(ctx); err != nil {
 			return status, nil
 		}
-		defer tempNode.Stop(ctx)
+	defer func() { _ = tempNode.Stop(ctx) }()
 
-		// Wait briefly to sync state
-		time.Sleep(time.Second)
+	// Wait briefly to sync state
+	time.Sleep(time.Second)
 
-		status.Connected = tempNode.Connected()
+	status.Connected = tempNode.Connected()
 		status.Role = tempNode.Role()
 		status.Leader = tempNode.Leader()
 		status.Epoch = tempNode.Epoch()
@@ -245,7 +244,7 @@ func (m *Manager) Promote(ctx context.Context) error {
 	if err := tempNode.Start(ctx); err != nil {
 		return fmt.Errorf("failed to connect to cluster: %w", err)
 	}
-	defer tempNode.Stop(ctx)
+	defer func() { _ = tempNode.Stop(ctx) }()
 
 	return m.waitForLeadership(ctx, tempNode, 15*time.Second)
 }
@@ -300,7 +299,7 @@ func (m *Manager) Demote(ctx context.Context) error {
 	if err := tempNode.Start(ctx); err != nil {
 		return fmt.Errorf("failed to connect to cluster: %w", err)
 	}
-	defer tempNode.Stop(ctx)
+	defer func() { _ = tempNode.Stop(ctx) }()
 
 	// Wait briefly to sync state
 	time.Sleep(time.Second)

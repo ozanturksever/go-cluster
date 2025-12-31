@@ -21,14 +21,12 @@ func startBenchmarkNATSContainer(ctx context.Context, b *testing.B) (string, fun
 
 	url, err := container.ConnectionString(ctx)
 	if err != nil {
-		container.Terminate(ctx)
+		_ = container.Terminate(ctx)
 		b.Fatalf("failed to get NATS connection string: %v", err)
 	}
 
 	cleanup := func() {
-		if err := container.Terminate(ctx); err != nil {
-			b.Logf("failed to terminate NATS container: %v", err)
-		}
+		_ = container.Terminate(ctx)
 	}
 
 	return url, cleanup
@@ -94,7 +92,7 @@ func BenchmarkSingleNodeLeadershipAcquisition(b *testing.B) {
 		acquisitionTime := leaderTime.Sub(startTime)
 		totalAcquisitionTime += acquisitionTime
 
-		node.Stop(ctx)
+		_ = node.Stop(ctx)
 	}
 
 	avgAcquisitionMs := float64(totalAcquisitionTime.Milliseconds()) / float64(b.N)
@@ -175,14 +173,14 @@ func BenchmarkTwoNodeFailover(b *testing.B) {
 		}
 
 		// Start node2 (passive)
-		node2.Start(ctx)
+		_ = node2.Start(ctx)
 		time.Sleep(500 * time.Millisecond) // Let node2 connect
 
 		// Record the time when leader fails
 		leaderFailTime := time.Now()
 
 		// Stop node1 (simulate crash)
-		node1.Stop(ctx)
+		_ = node1.Stop(ctx)
 
 		// Wait for node2 to become leader
 		deadline = time.Now().Add(15 * time.Second)
@@ -197,7 +195,7 @@ func BenchmarkTwoNodeFailover(b *testing.B) {
 		failoverTime := node2LeaderTime.Sub(leaderFailTime)
 		totalFailoverTime += failoverTime
 
-		node2.Stop(ctx)
+		_ = node2.Stop(ctx)
 	}
 
 	avgFailoverMs := float64(totalFailoverTime.Milliseconds()) / float64(b.N)
@@ -278,12 +276,12 @@ func BenchmarkGracefulStepdownFailover(b *testing.B) {
 			time.Sleep(10 * time.Millisecond)
 		}
 
-		node2.Start(ctx)
+		_ = node2.Start(ctx)
 		time.Sleep(500 * time.Millisecond)
 
 		// Record time and step down
 		stepdownTime := time.Now()
-		node1.StepDown(ctx)
+		_ = node1.StepDown(ctx)
 
 		// Wait for node2 to become leader
 		deadline = time.Now().Add(15 * time.Second)
@@ -298,8 +296,8 @@ func BenchmarkGracefulStepdownFailover(b *testing.B) {
 		failoverTime := node2LeaderTime.Sub(stepdownTime)
 		totalFailoverTime += failoverTime
 
-		node1.Stop(ctx)
-		node2.Stop(ctx)
+		_ = node1.Stop(ctx)
+		_ = node2.Stop(ctx)
 	}
 
 	avgFailoverMs := float64(totalFailoverTime.Milliseconds()) / float64(b.N)
@@ -389,11 +387,11 @@ func BenchmarkFailoverByLeaseTTL(b *testing.B) {
 					time.Sleep(10 * time.Millisecond)
 				}
 
-				node2.Start(ctx)
+				_ = node2.Start(ctx)
 				time.Sleep(500 * time.Millisecond)
 
 				leaderFailTime := time.Now()
-				node1.Stop(ctx)
+				_ = node1.Stop(ctx)
 
 				deadline = time.Now().Add(tc.leaseTTL * 3)
 				for time.Now().Before(deadline) && !node2Leader.Load() {
@@ -407,7 +405,7 @@ func BenchmarkFailoverByLeaseTTL(b *testing.B) {
 				failoverTime := node2LeaderTime.Sub(leaderFailTime)
 				totalFailoverTime += failoverTime
 
-				node2.Stop(ctx)
+				_ = node2.Stop(ctx)
 			}
 
 			avgFailoverMs := float64(totalFailoverTime.Milliseconds()) / float64(b.N)
@@ -467,14 +465,14 @@ func BenchmarkManagerFailover(b *testing.B) {
 		ctx1, cancel1 := context.WithCancel(ctx)
 		ctx2, cancel2 := context.WithCancel(ctx)
 
-		go mgr1.RunDaemon(ctx1)
+		go func() { _ = mgr1.RunDaemon(ctx1) }()
 
 		deadline := time.Now().Add(10 * time.Second)
 		for time.Now().Before(deadline) && !node1Leader.Load() {
 			time.Sleep(10 * time.Millisecond)
 		}
 
-		go mgr2.RunDaemon(ctx2)
+		go func() { _ = mgr2.RunDaemon(ctx2) }()
 		time.Sleep(500 * time.Millisecond)
 
 		leaderFailTime := time.Now()

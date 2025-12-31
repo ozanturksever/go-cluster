@@ -111,7 +111,7 @@ func TestService_StartStop(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err)
-	defer natsContainer.Terminate(ctx)
+	defer func() { _ = natsContainer.Terminate(ctx) }()
 
 	natsURL, err := natsContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -174,7 +174,7 @@ func TestService_StatusEndpoint(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err)
-	defer natsContainer.Terminate(ctx)
+	defer func() { _ = natsContainer.Terminate(ctx) }()
 
 	natsURL, err := natsContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -202,7 +202,7 @@ func TestService_StatusEndpoint(t *testing.T) {
 
 	err = svc.Start()
 	require.NoError(t, err)
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Wait a bit for service to be ready
 	time.Sleep(100 * time.Millisecond)
@@ -234,7 +234,7 @@ func TestService_PingEndpoint(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err)
-	defer natsContainer.Terminate(ctx)
+	defer func() { _ = natsContainer.Terminate(ctx) }()
 
 	natsURL, err := natsContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -262,7 +262,7 @@ func TestService_PingEndpoint(t *testing.T) {
 
 	err = svc.Start()
 	require.NoError(t, err)
-	defer svc.Stop()
+	defer func() { _ = svc.Stop() }()
 
 	// Wait a bit for service to be ready
 	time.Sleep(100 * time.Millisecond)
@@ -290,7 +290,7 @@ func TestService_StepdownEndpoint(t *testing.T) {
 		testcontainers.WithCmd("--jetstream"),
 	)
 	require.NoError(t, err)
-	defer natsContainer.Terminate(ctx)
+	defer func() { _ = natsContainer.Terminate(ctx) }()
 
 	natsURL, err := natsContainer.ConnectionString(ctx)
 	require.NoError(t, err)
@@ -323,7 +323,7 @@ func TestService_StepdownEndpoint(t *testing.T) {
 
 		err = svc.Start()
 		require.NoError(t, err)
-		defer svc.Stop()
+		defer func() { _ = svc.Stop() }()
 
 		time.Sleep(100 * time.Millisecond)
 
@@ -361,7 +361,7 @@ func TestService_StepdownEndpoint(t *testing.T) {
 
 		err = svc.Start()
 		require.NoError(t, err)
-		defer svc.Stop()
+		defer func() { _ = svc.Stop() }()
 
 		time.Sleep(100 * time.Millisecond)
 
