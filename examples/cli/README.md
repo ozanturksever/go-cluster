@@ -219,7 +219,7 @@ The configuration file is JSON format:
   },
   "election": {
     "leaseTtlMs": 10000,
-    "renewIntervalMs": 3000
+    "heartbeatIntervalMs": 3000
   }
 }
 ```

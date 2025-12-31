@@ -1,8 +1,9 @@
 // Package cluster provides NATS-based cluster coordination for building
 // highly-available distributed systems in Go.
 //
-// The package offers leader election using NATS JetStream KV Store, epoch-based
-// fencing to prevent split-brain scenarios, and a simple hooks-based API for
+// The package offers leader election using NATS JetStream KV Watch for sub-500ms
+// failover, epoch-based fencing to prevent split-brain scenarios, NATS micro
+// service endpoints for health and discovery, and a simple hooks-based API for
 // reacting to cluster state changes.
 //
 // # Quick Start
@@ -23,6 +24,16 @@
 //
 //	func (a *MyApp) OnLeaderChange(ctx context.Context, nodeID string) error {
 //	    log.Printf("Leader changed to: %s", nodeID)
+//	    return nil
+//	}
+//
+//	func (a *MyApp) OnNATSReconnect(ctx context.Context) error {
+//	    log.Println("NATS reconnected")
+//	    return nil
+//	}
+//
+//	func (a *MyApp) OnNATSDisconnect(ctx context.Context, err error) error {
+//	    log.Printf("NATS disconnected: %v", err)
 //	    return nil
 //	}
 //
@@ -47,12 +58,13 @@
 //
 // # Architecture
 //
-// The package uses a lease-based leader election mechanism:
+// The package uses NATS KV Watch for reactive leader election:
 //
-//   - Nodes compete to acquire a lease in NATS JetStream KV Store
-//   - The lease holder is the leader and must periodically renew the lease
-//   - If the leader fails to renew, other nodes can acquire the lease
+//   - Nodes watch the leader key in NATS JetStream KV Store
+//   - KV Watch provides instant notification of leader changes (<500ms failover)
+//   - NATS KV MaxAge handles lease TTL automatically
 //   - Each leadership change increments an epoch counter for fencing
+//   - Resilient NATS connections with automatic reconnection
 //
 // # Configuration
 //
@@ -62,20 +74,28 @@
 //   - NodeID: Unique identifier for this node (required)
 //   - NATSURLs: NATS server URLs (required)
 //   - LeaseTTL: How long the lease is valid (default: 10s)
-//   - RenewInterval: How often to renew the lease (default: 3s)
+//   - HeartbeatInterval: How often leader refreshes the lease (default: 3s)
+//   - ReconnectWait: Wait between NATS reconnection attempts (default: 2s)
+//   - MaxReconnects: Maximum reconnection attempts, -1 for unlimited (default: -1)
+//
+// # NATS Micro Service
+//
+// Each node registers as a NATS micro service with endpoints:
+//
+//   - cluster_<clusterID>.status.<nodeID> - Node status (role, leader, epoch)
+//   - cluster_<clusterID>.ping.<nodeID> - Health check
+//   - cluster_<clusterID>.control.<nodeID>.stepdown - Trigger stepdown
+//
+// Use nats micro ls/info/stats CLI commands for service discovery.
 //
 // # High-Level Manager
 //
-// For applications requiring VIP management and health checking, use the
-// [Manager] type which provides a higher-level API:
+// For applications requiring VIP management, use the [Manager] type:
 //
 //	mgr, err := cluster.NewManager(cfg, hooks)
-//	mgr.RunDaemon(ctx)  // Runs leader election, VIP, and health checking
+//	mgr.RunDaemon(ctx)  // Runs leader election and VIP management
 //
 // # Sub-packages
 //
-// The following sub-packages provide optional functionality:
-//
-//   - health: NATS-based health checking using request/reply
-//   - vip: Virtual IP management on Linux systems
+// The vip sub-package provides Virtual IP management on Linux systems.
 package cluster

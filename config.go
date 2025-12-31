@@ -10,6 +10,80 @@ import (
 	"time"
 )
 
+const (
+	DefaultLeaseTTL          = 10 * time.Second
+	DefaultHeartbeatInterval = 3 * time.Second
+	DefaultReconnectWait     = 2 * time.Second
+	DefaultMaxReconnects     = -1 // Unlimited
+	DefaultServiceVersion    = "1.0.0"
+)
+
+// Config configures the cluster node.
+type Config struct {
+	ClusterID       string
+	NodeID          string
+	NATSURLs        []string
+	NATSCredentials string
+
+	// Timing configuration
+	LeaseTTL          time.Duration
+	HeartbeatInterval time.Duration
+
+	// Service configuration
+	ServiceVersion string
+
+	// Connection resilience configuration
+	ReconnectWait time.Duration
+	MaxReconnects int
+
+	Logger *slog.Logger
+}
+
+func (c *Config) Validate() error {
+	if c.ClusterID == "" {
+		return fmt.Errorf("ClusterID is required")
+	}
+	if c.NodeID == "" {
+		return fmt.Errorf("NodeID is required")
+	}
+	if len(c.NATSURLs) == 0 {
+		return fmt.Errorf("at least one NATS URL is required")
+	}
+	return nil
+}
+
+func (c *Config) applyDefaults() {
+	if c.LeaseTTL == 0 {
+		c.LeaseTTL = DefaultLeaseTTL
+	}
+	if c.HeartbeatInterval == 0 {
+		c.HeartbeatInterval = DefaultHeartbeatInterval
+	}
+	if c.ServiceVersion == "" {
+		c.ServiceVersion = DefaultServiceVersion
+	}
+	if c.ReconnectWait == 0 {
+		c.ReconnectWait = DefaultReconnectWait
+	}
+	if c.MaxReconnects == 0 {
+		c.MaxReconnects = DefaultMaxReconnects
+	}
+	if c.Logger == nil {
+		c.Logger = slog.Default()
+	}
+}
+
+// KVBucketName returns the KV bucket name for this cluster.
+func (c *Config) KVBucketName() string {
+	return fmt.Sprintf("KV_CLUSTER_%s", c.ClusterID)
+}
+
+// ServiceName returns the micro service name for this cluster.
+// Uses underscores instead of dots since NATS micro service names must be alphanumeric with dashes/underscores.
+func (c *Config) ServiceName() string {
+	return fmt.Sprintf("cluster_%s", c.ClusterID)
+}
+
 // FileConfig represents the cluster configuration loaded from a JSON file.
 // This is the user-facing configuration format that gets converted to the internal Config.
 type FileConfig struct {
@@ -18,12 +92,15 @@ type FileConfig struct {
 	NATS      NATSFileConfig `json:"nats"`
 	VIP       VIPFileConfig  `json:"vip,omitempty"`
 	Election  ElectionConfig `json:"election,omitempty"`
+	Service   ServiceConfig  `json:"service,omitempty"`
 }
 
 // NATSFileConfig contains NATS connection settings.
 type NATSFileConfig struct {
-	Servers     []string `json:"servers"`
-	Credentials string   `json:"credentials,omitempty"`
+	Servers       []string `json:"servers"`
+	Credentials   string   `json:"credentials,omitempty"`
+	ReconnectWait int64    `json:"reconnectWaitMs,omitempty"`
+	MaxReconnects int      `json:"maxReconnects,omitempty"`
 }
 
 // VIPFileConfig contains Virtual IP settings.
@@ -48,8 +125,13 @@ func (v VIPFileConfig) IsConfigured() bool {
 
 // ElectionConfig contains leader election settings.
 type ElectionConfig struct {
-	LeaseTTLMs      int64 `json:"leaseTtlMs,omitempty"`
-	RenewIntervalMs int64 `json:"renewIntervalMs,omitempty"`
+	LeaseTTLMs          int64 `json:"leaseTtlMs,omitempty"`
+	HeartbeatIntervalMs int64 `json:"heartbeatIntervalMs,omitempty"`
+}
+
+// ServiceConfig contains micro service settings.
+type ServiceConfig struct {
+	Version string `json:"version,omitempty"`
 }
 
 // rawFileConfig is used for JSON unmarshaling.
@@ -57,8 +139,10 @@ type rawFileConfig struct {
 	ClusterID string `json:"clusterId"`
 	NodeID    string `json:"nodeId"`
 	NATS      struct {
-		Servers     []string `json:"servers"`
-		Credentials string   `json:"credentials,omitempty"`
+		Servers       []string `json:"servers"`
+		Credentials   string   `json:"credentials,omitempty"`
+		ReconnectWait int64    `json:"reconnectWaitMs,omitempty"`
+		MaxReconnects int      `json:"maxReconnects,omitempty"`
 	} `json:"nats"`
 	VIP struct {
 		Address   string `json:"address,omitempty"`
@@ -66,9 +150,12 @@ type rawFileConfig struct {
 		Interface string `json:"interface,omitempty"`
 	} `json:"vip,omitempty"`
 	Election struct {
-		LeaseTTLMs      int64 `json:"leaseTtlMs,omitempty"`
-		RenewIntervalMs int64 `json:"renewIntervalMs,omitempty"`
+		LeaseTTLMs          int64 `json:"leaseTtlMs,omitempty"`
+		HeartbeatIntervalMs int64 `json:"heartbeatIntervalMs,omitempty"`
 	} `json:"election,omitempty"`
+	Service struct {
+		Version string `json:"version,omitempty"`
+	} `json:"service,omitempty"`
 }
 
 // LoadConfigFromFile loads configuration from a JSON file.
@@ -87,8 +174,10 @@ func LoadConfigFromFile(path string) (*FileConfig, error) {
 		ClusterID: raw.ClusterID,
 		NodeID:    raw.NodeID,
 		NATS: NATSFileConfig{
-			Servers:     raw.NATS.Servers,
-			Credentials: raw.NATS.Credentials,
+			Servers:       raw.NATS.Servers,
+			Credentials:   raw.NATS.Credentials,
+			ReconnectWait: raw.NATS.ReconnectWait,
+			MaxReconnects: raw.NATS.MaxReconnects,
 		},
 		VIP: VIPFileConfig{
 			Address:   raw.VIP.Address,
@@ -96,8 +185,11 @@ func LoadConfigFromFile(path string) (*FileConfig, error) {
 			Interface: raw.VIP.Interface,
 		},
 		Election: ElectionConfig{
-			LeaseTTLMs:      raw.Election.LeaseTTLMs,
-			RenewIntervalMs: raw.Election.RenewIntervalMs,
+			LeaseTTLMs:          raw.Election.LeaseTTLMs,
+			HeartbeatIntervalMs: raw.Election.HeartbeatIntervalMs,
+		},
+		Service: ServiceConfig{
+			Version: raw.Service.Version,
 		},
 	}
 
@@ -158,24 +250,36 @@ func (c *FileConfig) ApplyDefaults() {
 	if c.Election.LeaseTTLMs == 0 {
 		c.Election.LeaseTTLMs = int64(DefaultLeaseTTL / time.Millisecond)
 	}
-	if c.Election.RenewIntervalMs == 0 {
-		c.Election.RenewIntervalMs = int64(DefaultRenewInterval / time.Millisecond)
+	if c.Election.HeartbeatIntervalMs == 0 {
+		c.Election.HeartbeatIntervalMs = int64(DefaultHeartbeatInterval / time.Millisecond)
 	}
 	if c.VIP.Netmask == 0 && c.VIP.Address != "" {
 		c.VIP.Netmask = 24
+	}
+	if c.NATS.ReconnectWait == 0 {
+		c.NATS.ReconnectWait = int64(DefaultReconnectWait / time.Millisecond)
+	}
+	if c.NATS.MaxReconnects == 0 {
+		c.NATS.MaxReconnects = DefaultMaxReconnects
+	}
+	if c.Service.Version == "" {
+		c.Service.Version = DefaultServiceVersion
 	}
 }
 
 // ToNodeConfig converts FileConfig to the internal Config used by Node.
 func (c *FileConfig) ToNodeConfig(logger *slog.Logger) Config {
 	return Config{
-		ClusterID:       c.ClusterID,
-		NodeID:          c.NodeID,
-		NATSURLs:        c.NATS.Servers,
-		NATSCredentials: c.NATS.Credentials,
-		LeaseTTL:        time.Duration(c.Election.LeaseTTLMs) * time.Millisecond,
-		RenewInterval:   time.Duration(c.Election.RenewIntervalMs) * time.Millisecond,
-		Logger:          logger,
+		ClusterID:         c.ClusterID,
+		NodeID:            c.NodeID,
+		NATSURLs:          c.NATS.Servers,
+		NATSCredentials:   c.NATS.Credentials,
+		LeaseTTL:          time.Duration(c.Election.LeaseTTLMs) * time.Millisecond,
+		HeartbeatInterval: time.Duration(c.Election.HeartbeatIntervalMs) * time.Millisecond,
+		ServiceVersion:    c.Service.Version,
+		ReconnectWait:     time.Duration(c.NATS.ReconnectWait) * time.Millisecond,
+		MaxReconnects:     c.NATS.MaxReconnects,
+		Logger:            logger,
 	}
 }
 

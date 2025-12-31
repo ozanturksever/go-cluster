@@ -14,14 +14,22 @@ type Hooks interface {
 
 	// OnLeaderChange is called when the cluster leader changes.
 	OnLeaderChange(ctx context.Context, nodeID string) error
+
+	// OnNATSReconnect is called when the NATS connection is re-established.
+	OnNATSReconnect(ctx context.Context) error
+
+	// OnNATSDisconnect is called when the NATS connection is lost.
+	OnNATSDisconnect(ctx context.Context, err error) error
 }
 
 // NoOpHooks is a default implementation of Hooks that does nothing.
 type NoOpHooks struct{}
 
-func (NoOpHooks) OnBecomeLeader(ctx context.Context) error           { return nil }
-func (NoOpHooks) OnLoseLeadership(ctx context.Context) error         { return nil }
-func (NoOpHooks) OnLeaderChange(ctx context.Context, _ string) error { return nil }
+func (NoOpHooks) OnBecomeLeader(ctx context.Context) error              { return nil }
+func (NoOpHooks) OnLoseLeadership(ctx context.Context) error            { return nil }
+func (NoOpHooks) OnLeaderChange(ctx context.Context, _ string) error    { return nil }
+func (NoOpHooks) OnNATSReconnect(ctx context.Context) error             { return nil }
+func (NoOpHooks) OnNATSDisconnect(ctx context.Context, _ error) error   { return nil }
 
 var _ Hooks = NoOpHooks{}
 

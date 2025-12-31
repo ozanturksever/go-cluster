@@ -5,40 +5,22 @@ import (
 	"time"
 )
 
-func TestLeaseIsExpired(t *testing.T) {
-	tests := []struct {
-		name      string
-		expiresAt time.Time
-		want      bool
-	}{
-		{
-			name:      "not expired - future",
-			expiresAt: time.Now().Add(10 * time.Second),
-			want:      false,
-		},
-		{
-			name:      "expired - past",
-			expiresAt: time.Now().Add(-10 * time.Second),
-			want:      true,
-		},
-		{
-			name:      "expired - just now",
-			expiresAt: time.Now().Add(-1 * time.Millisecond),
-			want:      true,
-		},
-	}
+func TestNewLease(t *testing.T) {
+	lease := NewLease("node-1", 5)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			lease := &Lease{
-				NodeID:    "test-node",
-				Epoch:     1,
-				ExpiresAt: tt.expiresAt,
-			}
-			if got := lease.IsExpired(); got != tt.want {
-				t.Errorf("IsExpired() = %v, want %v", got, tt.want)
-			}
-		})
+	if lease.NodeID != "node-1" {
+		t.Errorf("NewLease() NodeID = %q, want %q", lease.NodeID, "node-1")
+	}
+	if lease.Epoch != 5 {
+		t.Errorf("NewLease() Epoch = %d, want %d", lease.Epoch, 5)
+	}
+	if lease.AcquiredAt == 0 {
+		t.Error("NewLease() AcquiredAt should be set")
+	}
+	// AcquiredAt should be recent (within last second)
+	acquiredAt := time.UnixMilli(lease.AcquiredAt)
+	if time.Since(acquiredAt) > time.Second {
+		t.Error("NewLease() AcquiredAt should be recent")
 	}
 }
 
@@ -49,75 +31,74 @@ func TestLeaseIsValid(t *testing.T) {
 		want  bool
 	}{
 		{
-			name: "valid lease",
-			lease: Lease{
-				NodeID:    "test-node",
-				Epoch:     1,
-				ExpiresAt: time.Now().Add(10 * time.Second),
-			},
-			want: true,
+			name:  "valid lease",
+			lease: Lease{NodeID: "node-1", Epoch: 1},
+			want:  true,
 		},
 		{
-			name: "invalid - empty node ID",
-			lease: Lease{
-				NodeID:    "",
-				Epoch:     1,
-				ExpiresAt: time.Now().Add(10 * time.Second),
-			},
-			want: false,
+			name:  "empty node ID",
+			lease: Lease{NodeID: "", Epoch: 1},
+			want:  false,
 		},
 		{
-			name: "invalid - expired",
-			lease: Lease{
-				NodeID:    "test-node",
-				Epoch:     1,
-				ExpiresAt: time.Now().Add(-10 * time.Second),
-			},
-			want: false,
+			name:  "zero epoch",
+			lease: Lease{NodeID: "node-1", Epoch: 0},
+			want:  false,
 		},
 		{
-			name: "invalid - empty node ID and expired",
-			lease: Lease{
-				NodeID:    "",
-				Epoch:     1,
-				ExpiresAt: time.Now().Add(-10 * time.Second),
-			},
-			want: false,
+			name:  "both invalid",
+			lease: Lease{NodeID: "", Epoch: 0},
+			want:  false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := tt.lease.IsValid(); got != tt.want {
-				t.Errorf("IsValid() = %v, want %v", got, tt.want)
+				t.Errorf("Lease.IsValid() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestLeaseTimeUntilExpiry(t *testing.T) {
-	t.Run("returns positive duration for future expiry", func(t *testing.T) {
-		lease := &Lease{
-			NodeID:    "test-node",
-			ExpiresAt: time.Now().Add(5 * time.Second),
-		}
-		got := lease.TimeUntilExpiry()
-		if got <= 0 {
-			t.Errorf("TimeUntilExpiry() = %v, want positive duration", got)
-		}
-		if got > 5*time.Second {
-			t.Errorf("TimeUntilExpiry() = %v, want <= 5s", got)
-		}
-	})
+func TestLeaseAge(t *testing.T) {
+	// Test with zero AcquiredAt
+	lease := Lease{NodeID: "node-1", Epoch: 1, AcquiredAt: 0}
+	if lease.Age() != 0 {
+		t.Errorf("Lease.Age() with zero AcquiredAt = %v, want 0", lease.Age())
+	}
 
-	t.Run("returns zero for expired lease", func(t *testing.T) {
-		lease := &Lease{
-			NodeID:    "test-node",
-			ExpiresAt: time.Now().Add(-5 * time.Second),
-		}
-		got := lease.TimeUntilExpiry()
-		if got != 0 {
-			t.Errorf("TimeUntilExpiry() = %v, want 0", got)
-		}
-	})
+	// Test with recent AcquiredAt
+	lease = Lease{
+		NodeID:     "node-1",
+		Epoch:      1,
+		AcquiredAt: time.Now().Add(-5 * time.Second).UnixMilli(),
+	}
+	age := lease.Age()
+	if age < 4*time.Second || age > 6*time.Second {
+		t.Errorf("Lease.Age() = %v, want ~5s", age)
+	}
+
+	// Test with very old AcquiredAt
+	lease = Lease{
+		NodeID:     "node-1",
+		Epoch:      1,
+		AcquiredAt: time.Now().Add(-1 * time.Hour).UnixMilli(),
+	}
+	age = lease.Age()
+	if age < 59*time.Minute || age > 61*time.Minute {
+		t.Errorf("Lease.Age() = %v, want ~1h", age)
+	}
+}
+
+func TestLeaseRevision(t *testing.T) {
+	lease := NewLease("node-1", 1)
+	if lease.Revision != 0 {
+		t.Errorf("NewLease() Revision = %d, want 0", lease.Revision)
+	}
+
+	lease.Revision = 42
+	if lease.Revision != 42 {
+		t.Errorf("Lease.Revision = %d, want 42", lease.Revision)
+	}
 }

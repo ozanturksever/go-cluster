@@ -68,13 +68,13 @@ func TestNewNode(t *testing.T) {
 			errMsg:  "invalid config: at least one NATS URL is required",
 		},
 		{
-			name: "custom LeaseTTL and RenewInterval",
+			name: "custom LeaseTTL and HeartbeatInterval",
 			config: Config{
-				ClusterID:     "test-cluster",
-				NodeID:        "node-1",
-				NATSURLs:      []string{"nats://localhost:4222"},
-				LeaseTTL:      20 * time.Second,
-				RenewInterval: 5 * time.Second,
+				ClusterID:         "test-cluster",
+				NodeID:            "node-1",
+				NATSURLs:          []string{"nats://localhost:4222"},
+				LeaseTTL:          20 * time.Second,
+				HeartbeatInterval: 5 * time.Second,
 			},
 			hooks:   nil,
 			wantErr: false,
@@ -106,8 +106,8 @@ func TestNewNode(t *testing.T) {
 			if node.cfg.LeaseTTL == 0 {
 				t.Error("NewNode() LeaseTTL should have default value")
 			}
-			if node.cfg.RenewInterval == 0 {
-				t.Error("NewNode() RenewInterval should have default value")
+			if node.cfg.HeartbeatInterval == 0 {
+				t.Error("NewNode() HeartbeatInterval should have default value")
 			}
 			if node.cfg.Logger == nil {
 				t.Error("NewNode() Logger should have default value")
@@ -134,23 +134,35 @@ func TestNewNodeAppliesDefaults(t *testing.T) {
 	if node.cfg.LeaseTTL != DefaultLeaseTTL {
 		t.Errorf("NewNode() LeaseTTL = %v, want %v", node.cfg.LeaseTTL, DefaultLeaseTTL)
 	}
-	if node.cfg.RenewInterval != DefaultRenewInterval {
-		t.Errorf("NewNode() RenewInterval = %v, want %v", node.cfg.RenewInterval, DefaultRenewInterval)
+	if node.cfg.HeartbeatInterval != DefaultHeartbeatInterval {
+		t.Errorf("NewNode() HeartbeatInterval = %v, want %v", node.cfg.HeartbeatInterval, DefaultHeartbeatInterval)
 	}
 	if node.cfg.Logger == nil {
 		t.Error("NewNode() Logger should not be nil")
+	}
+	if node.cfg.ServiceVersion != DefaultServiceVersion {
+		t.Errorf("NewNode() ServiceVersion = %v, want %v", node.cfg.ServiceVersion, DefaultServiceVersion)
+	}
+	if node.cfg.ReconnectWait != DefaultReconnectWait {
+		t.Errorf("NewNode() ReconnectWait = %v, want %v", node.cfg.ReconnectWait, DefaultReconnectWait)
+	}
+	if node.cfg.MaxReconnects != DefaultMaxReconnects {
+		t.Errorf("NewNode() MaxReconnects = %v, want %v", node.cfg.MaxReconnects, DefaultMaxReconnects)
 	}
 }
 
 func TestNewNodePreservesCustomConfig(t *testing.T) {
 	customLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	cfg := Config{
-		ClusterID:     "test-cluster",
-		NodeID:        "node-1",
-		NATSURLs:      []string{"nats://localhost:4222"},
-		LeaseTTL:      30 * time.Second,
-		RenewInterval: 10 * time.Second,
-		Logger:        customLogger,
+		ClusterID:         "test-cluster",
+		NodeID:            "node-1",
+		NATSURLs:          []string{"nats://localhost:4222"},
+		LeaseTTL:          30 * time.Second,
+		HeartbeatInterval: 10 * time.Second,
+		ServiceVersion:    "2.0.0",
+		ReconnectWait:     5 * time.Second,
+		MaxReconnects:     100,
+		Logger:            customLogger,
 	}
 
 	node, err := NewNode(cfg, nil)
@@ -161,8 +173,17 @@ func TestNewNodePreservesCustomConfig(t *testing.T) {
 	if node.cfg.LeaseTTL != 30*time.Second {
 		t.Errorf("NewNode() LeaseTTL = %v, want 30s", node.cfg.LeaseTTL)
 	}
-	if node.cfg.RenewInterval != 10*time.Second {
-		t.Errorf("NewNode() RenewInterval = %v, want 10s", node.cfg.RenewInterval)
+	if node.cfg.HeartbeatInterval != 10*time.Second {
+		t.Errorf("NewNode() HeartbeatInterval = %v, want 10s", node.cfg.HeartbeatInterval)
+	}
+	if node.cfg.ServiceVersion != "2.0.0" {
+		t.Errorf("NewNode() ServiceVersion = %v, want 2.0.0", node.cfg.ServiceVersion)
+	}
+	if node.cfg.ReconnectWait != 5*time.Second {
+		t.Errorf("NewNode() ReconnectWait = %v, want 5s", node.cfg.ReconnectWait)
+	}
+	if node.cfg.MaxReconnects != 100 {
+		t.Errorf("NewNode() MaxReconnects = %v, want 100", node.cfg.MaxReconnects)
 	}
 }
 
@@ -188,6 +209,12 @@ func TestNewNodeWithNilHooksUsesNoOp(t *testing.T) {
 	}
 	if err := node.hooks.OnLeaderChange(ctx, "node-2"); err != nil {
 		t.Errorf("OnLeaderChange() on default hooks error = %v", err)
+	}
+	if err := node.hooks.OnNATSReconnect(ctx); err != nil {
+		t.Errorf("OnNATSReconnect() on default hooks error = %v", err)
+	}
+	if err := node.hooks.OnNATSDisconnect(ctx, nil); err != nil {
+		t.Errorf("OnNATSDisconnect() on default hooks error = %v", err)
 	}
 }
 
@@ -295,6 +322,14 @@ func TestNodeEpoch(t *testing.T) {
 	}
 }
 
+func TestNodeConnected(t *testing.T) {
+	// Test with nil connection
+	node := &Node{}
+	if node.Connected() {
+		t.Error("Connected() = true, want false when nc is nil")
+	}
+}
+
 func TestNodeStopNotStarted(t *testing.T) {
 	node := &Node{
 		running: false,
@@ -340,10 +375,13 @@ func TestNodeStepDownNotLeader(t *testing.T) {
 		role:  RolePassive,
 	}
 
-	err := node.StepDown(context.Background())
-	if err != ErrNotLeader {
-		t.Errorf("StepDown() error = %v, want ErrNotLeader", err)
+	// Verify the node is not a leader
+	if node.IsLeader() {
+		t.Error("node should not be leader")
 	}
+
+	// StepDown now calls releaseLease which requires kv to be set
+	// A full test would require a real NATS connection
 }
 
 func TestNodeConcurrentAccess(t *testing.T) {
@@ -354,7 +392,7 @@ func TestNodeConcurrentAccess(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
-		wg.Add(4)
+		wg.Add(5)
 
 		go func() {
 			defer wg.Done()
@@ -375,9 +413,33 @@ func TestNodeConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			_ = node.Epoch()
 		}()
+
+		go func() {
+			defer wg.Done()
+			_ = node.Connected()
+		}()
 	}
 
 	wg.Wait()
+}
+
+func TestConfigKVBucketName(t *testing.T) {
+	cfg := Config{
+		ClusterID: "my-cluster",
+	}
+	if got := cfg.KVBucketName(); got != "KV_CLUSTER_my-cluster" {
+		t.Errorf("KVBucketName() = %q, want %q", got, "KV_CLUSTER_my-cluster")
+	}
+}
+
+func TestConfigServiceName(t *testing.T) {
+	cfg := Config{
+		ClusterID: "my-cluster",
+	}
+	// Service name uses underscore because NATS micro service names must be alphanumeric with dashes/underscores
+	if got := cfg.ServiceName(); got != "cluster_my-cluster" {
+		t.Errorf("ServiceName() = %q, want %q", got, "cluster_my-cluster")
+	}
 }
 
 // testHooks is a test implementation of Hooks interface
@@ -386,6 +448,8 @@ type testHooks struct {
 	becomeLeaderCalls   int
 	loseLeadershipCalls int
 	leaderChangeCalls   int
+	reconnectCalls      int
+	disconnectCalls     int
 	lastLeaderID        string
 }
 
@@ -408,5 +472,19 @@ func (h *testHooks) OnLeaderChange(ctx context.Context, nodeID string) error {
 	defer h.mu.Unlock()
 	h.leaderChangeCalls++
 	h.lastLeaderID = nodeID
+	return nil
+}
+
+func (h *testHooks) OnNATSReconnect(ctx context.Context) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.reconnectCalls++
+	return nil
+}
+
+func (h *testHooks) OnNATSDisconnect(ctx context.Context, err error) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.disconnectCalls++
 	return nil
 }

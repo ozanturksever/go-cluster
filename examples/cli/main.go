@@ -610,6 +610,16 @@ func (a *CLIApp) OnDaemonStop(ctx context.Context) error {
 	return nil
 }
 
+func (a *CLIApp) OnNATSReconnect(ctx context.Context) error {
+	a.logger.Info("NATS reconnected")
+	return nil
+}
+
+func (a *CLIApp) OnNATSDisconnect(ctx context.Context, err error) error {
+	a.logger.Warn("NATS disconnected", "error", err)
+	return nil
+}
+
 func setupLogger(level string) *slog.Logger {
 	var logLevel slog.Level
 	switch level {

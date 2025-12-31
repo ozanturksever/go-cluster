@@ -111,7 +111,7 @@ func TestManagerJoin(t *testing.T) {
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	// Use shorter timeouts for testing
 	cfg.Election.LeaseTTLMs = 5000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	mgr, err := NewManager(*cfg, nil)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestManagerStatus(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 5000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	mgr, err := NewManager(*cfg, nil)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestManagerRunDaemon(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	var becameLeader atomic.Bool
 	hooks := &testManagerHooks{
@@ -237,7 +237,7 @@ func TestManagerPromote(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	mgr, err := NewManager(*cfg, nil)
 	if err != nil {
@@ -263,7 +263,7 @@ func TestManagerDemote(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	var becameLeader atomic.Bool
 	var lostLeadership atomic.Bool
@@ -331,7 +331,7 @@ func TestManagerLeave(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	var becameLeader atomic.Bool
 	hooks := &testManagerHooks{
@@ -377,7 +377,7 @@ func TestManagerAlreadyRunning(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	mgr, err := NewManager(*cfg, nil)
 	if err != nil {
@@ -414,7 +414,7 @@ func TestManagerIsRunning(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	mgr, err := NewManager(*cfg, nil)
 	if err != nil {
@@ -502,6 +502,14 @@ func (h *testManagerHooks) OnDaemonStop(ctx context.Context) error {
 	if h.onDaemonStop != nil {
 		return h.onDaemonStop(ctx)
 	}
+	return nil
+}
+
+func (h *testManagerHooks) OnNATSReconnect(ctx context.Context) error {
+	return nil
+}
+
+func (h *testManagerHooks) OnNATSDisconnect(ctx context.Context, err error) error {
 	return nil
 }
 

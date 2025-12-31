@@ -2,9 +2,9 @@ package cluster
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,56 +12,17 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-const (
-	DefaultLeaseTTL      = 10 * time.Second
-	DefaultRenewInterval = 3 * time.Second
-)
-
-// Config configures the cluster node.
-type Config struct {
-	ClusterID       string
-	NodeID          string
-	NATSURLs        []string
-	NATSCredentials string
-	LeaseTTL        time.Duration
-	RenewInterval   time.Duration
-	Logger          *slog.Logger
-}
-
-func (c *Config) Validate() error {
-	if c.ClusterID == "" {
-		return errors.New("ClusterID is required")
-	}
-	if c.NodeID == "" {
-		return errors.New("NodeID is required")
-	}
-	if len(c.NATSURLs) == 0 {
-		return errors.New("at least one NATS URL is required")
-	}
-	return nil
-}
-
-func (c *Config) applyDefaults() {
-	if c.LeaseTTL == 0 {
-		c.LeaseTTL = DefaultLeaseTTL
-	}
-	if c.RenewInterval == 0 {
-		c.RenewInterval = DefaultRenewInterval
-	}
-	if c.Logger == nil {
-		c.Logger = slog.Default()
-	}
-}
-
 // Node represents a participant in a cluster.
 type Node struct {
 	cfg    Config
 	hooks  Hooks
 	logger *slog.Logger
 
-	nc *nats.Conn
-	js jetstream.JetStream
-	kv jetstream.KeyValue
+	nc      *nats.Conn
+	js      jetstream.JetStream
+	kv      jetstream.KeyValue
+	watcher jetstream.KeyWatcher
+	service *Service
 
 	mu      sync.RWMutex
 	lease   *Lease
@@ -69,6 +30,7 @@ type Node struct {
 	stopCh  chan struct{}
 	wg      sync.WaitGroup
 	running bool
+	ctx     context.Context
 }
 
 // NewNode creates a new cluster node.
@@ -100,17 +62,11 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.running = true
 	n.stopCh = make(chan struct{})
+	n.ctx = ctx
 	n.mu.Unlock()
 
-	opts := []nats.Option{
-		nats.MaxReconnects(-1),
-		nats.ReconnectWait(2 * time.Second),
-	}
-	if n.cfg.NATSCredentials != "" {
-		opts = append(opts, nats.UserCredentials(n.cfg.NATSCredentials))
-	}
-
-	nc, err := nats.Connect(n.cfg.NATSURLs[0], opts...)
+	// Connect to NATS with resilient options
+	nc, err := n.connectNATS()
 	if err != nil {
 		n.mu.Lock()
 		n.running = false
@@ -119,6 +75,7 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.nc = nc
 
+	// Create JetStream context
 	js, err := jetstream.New(nc)
 	if err != nil {
 		nc.Close()
@@ -129,29 +86,36 @@ func (n *Node) Start(ctx context.Context) error {
 	}
 	n.js = js
 
-	bucketName := fmt.Sprintf("cluster-%s", n.cfg.ClusterID)
-	kv, err := js.CreateKeyValue(ctx, jetstream.KeyValueConfig{
-		Bucket: bucketName,
-		TTL:    n.cfg.LeaseTTL * 2,
-	})
-	if err != nil {
-		kv, err = js.KeyValue(ctx, bucketName)
-		if err != nil {
-			nc.Close()
-			n.mu.Lock()
-			n.running = false
-			n.mu.Unlock()
-			return fmt.Errorf("create/get KV bucket: %w", err)
-		}
+	// Initialize KV bucket
+	if err := n.initKVBucket(ctx); err != nil {
+		nc.Close()
+		n.mu.Lock()
+		n.running = false
+		n.mu.Unlock()
+		return fmt.Errorf("init KV bucket: %w", err)
 	}
-	n.kv = kv
 
-	_ = kv.Delete(ctx, n.cooldownKey())
+	// Clear any existing cooldown from previous runs
+	n.clearCooldown(ctx)
 
-	n.tryAcquireOrRenew(ctx)
+	// Start the KV watcher
+	if err := n.startWatcher(ctx); err != nil {
+		nc.Close()
+		n.mu.Lock()
+		n.running = false
+		n.mu.Unlock()
+		return fmt.Errorf("start watcher: %w", err)
+	}
 
+	// Start the heartbeat loop
 	n.wg.Add(1)
-	go n.electionLoop(ctx)
+	go n.heartbeatLoop(ctx)
+
+	// Start the micro service
+	if err := n.startService(); err != nil {
+		n.logger.Warn("failed to start micro service", "error", err)
+		// Non-fatal - continue without micro service
+	}
 
 	n.logger.Info("node started")
 	return nil
@@ -169,6 +133,14 @@ func (n *Node) Stop(ctx context.Context) error {
 
 	close(n.stopCh)
 	n.wg.Wait()
+
+	// Stop micro service
+	if n.service != nil {
+		n.service.Stop()
+	}
+
+	// Stop watcher
+	n.stopWatcher()
 
 	n.mu.Lock()
 	wasLeader := n.role == RolePrimary
@@ -224,30 +196,124 @@ func (n *Node) Epoch() int64 {
 	return 0
 }
 
+// Connected returns true if the NATS connection is active.
+func (n *Node) Connected() bool {
+	n.mu.RLock()
+	nc := n.nc
+	n.mu.RUnlock()
+
+	if nc == nil {
+		return false
+	}
+	return nc.IsConnected()
+}
+
 // StepDown voluntarily gives up leadership.
 func (n *Node) StepDown(ctx context.Context) error {
+	return n.releaseLease(ctx)
+}
+
+// Service returns the micro service (may be nil if not started).
+func (n *Node) Service() *Service {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.service
+}
+
+// connectNATS establishes a resilient NATS connection.
+func (n *Node) connectNATS() (*nats.Conn, error) {
+	opts := []nats.Option{
+		nats.MaxReconnects(n.cfg.MaxReconnects),
+		nats.ReconnectWait(n.cfg.ReconnectWait),
+		nats.ReconnectBufSize(8 * 1024 * 1024), // 8MB buffer
+		nats.PingInterval(2 * time.Second),      // Faster disconnect detection
+		nats.MaxPingsOutstanding(2),             // Allow 2 missed pings before disconnect
+
+		// Connection event handlers
+		nats.DisconnectErrHandler(n.handleDisconnect),
+		nats.ReconnectHandler(n.handleReconnect),
+		nats.ClosedHandler(n.handleClosed),
+		nats.ErrorHandler(n.handleError),
+		nats.DiscoveredServersHandler(n.handleDiscoveredServers),
+	}
+
+	if n.cfg.NATSCredentials != "" {
+		opts = append(opts, nats.UserCredentials(n.cfg.NATSCredentials))
+	}
+
+	// Connect with all configured URLs for automatic failover
+	return nats.Connect(strings.Join(n.cfg.NATSURLs, ","), opts...)
+}
+
+// handleDisconnect is called when NATS disconnects.
+func (n *Node) handleDisconnect(nc *nats.Conn, err error) {
+	n.logger.Warn("NATS disconnected", "error", err)
+
+	// Notify hooks
+	ctx := context.Background()
+	if hookErr := n.hooks.OnNATSDisconnect(ctx, err); hookErr != nil {
+		n.logger.Error("OnNATSDisconnect hook failed", "error", hookErr)
+	}
+}
+
+// handleReconnect is called when NATS reconnects.
+func (n *Node) handleReconnect(nc *nats.Conn) {
+	n.logger.Info("NATS reconnected", "server", nc.ConnectedUrl())
+
+	// Restart the watcher after reconnection
+	ctx := n.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	if err := n.restartWatcher(ctx); err != nil {
+		n.logger.Error("failed to restart watcher after reconnect", "error", err)
+	}
+
+	// Notify hooks
+	if hookErr := n.hooks.OnNATSReconnect(ctx); hookErr != nil {
+		n.logger.Error("OnNATSReconnect hook failed", "error", hookErr)
+	}
+}
+
+// handleClosed is called when NATS connection is permanently closed.
+func (n *Node) handleClosed(nc *nats.Conn) {
+	n.logger.Warn("NATS connection closed")
+}
+
+// handleError is called on async NATS errors.
+func (n *Node) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
+	n.logger.Error("NATS async error", "error", err, "subject", sub.Subject)
+}
+
+// handleDiscoveredServers is called when new NATS servers are discovered.
+func (n *Node) handleDiscoveredServers(nc *nats.Conn) {
+	servers := nc.DiscoveredServers()
+	n.logger.Info("discovered NATS servers", "servers", servers)
+}
+
+// startService starts the micro service.
+func (n *Node) startService() error {
+	callbacks := ServiceCallbacks{
+		GetRole:     n.Role,
+		GetLeader:   n.Leader,
+		GetEpoch:    n.Epoch,
+		IsConnected: n.Connected,
+		DoStepdown:  n.StepDown,
+	}
+
+	service, err := NewService(n.cfg, n.nc, callbacks)
+	if err != nil {
+		return err
+	}
+
+	if err := service.Start(); err != nil {
+		return err
+	}
+
 	n.mu.Lock()
-	if n.role != RolePrimary {
-		n.mu.Unlock()
-		return ErrNotLeader
-	}
-
-	if err := n.setCooldown(ctx); err != nil {
-		n.logger.Warn("failed to set cooldown marker", "error", err)
-	}
-
-	if err := n.kv.Delete(ctx, n.leaseKey()); err != nil && !errors.Is(err, jetstream.ErrKeyNotFound) {
-		n.mu.Unlock()
-		return fmt.Errorf("delete lease: %w", err)
-	}
-
-	n.role = RolePassive
-	n.lease = nil
-	n.logger.Info("stepped down from leadership", "cooldown", n.cfg.LeaseTTL)
+	n.service = service
 	n.mu.Unlock()
-
-	// Call hook outside the lock to avoid deadlock
-	n.notifyLoseLeadership(ctx)
 
 	return nil
 }

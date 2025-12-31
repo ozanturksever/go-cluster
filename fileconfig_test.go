@@ -158,9 +158,9 @@ func TestFileConfigApplyDefaults(t *testing.T) {
 		t.Errorf("ApplyDefaults() LeaseTTLMs = %v, want %v", cfg.Election.LeaseTTLMs, expectedLeaseTTL)
 	}
 
-	expectedRenewInterval := int64(DefaultRenewInterval / time.Millisecond)
-	if cfg.Election.RenewIntervalMs != expectedRenewInterval {
-		t.Errorf("ApplyDefaults() RenewIntervalMs = %v, want %v", cfg.Election.RenewIntervalMs, expectedRenewInterval)
+	expectedHeartbeatInterval := int64(DefaultHeartbeatInterval / time.Millisecond)
+	if cfg.Election.HeartbeatIntervalMs != expectedHeartbeatInterval {
+		t.Errorf("ApplyDefaults() HeartbeatIntervalMs = %v, want %v", cfg.Election.HeartbeatIntervalMs, expectedHeartbeatInterval)
 	}
 }
 
@@ -202,7 +202,7 @@ func TestLoadConfigFromFile(t *testing.T) {
   },
   "election": {
     "leaseTtlMs": 15000,
-    "renewIntervalMs": 5000
+    "heartbeatIntervalMs": 5000
   }
 }`
 
@@ -239,8 +239,8 @@ func TestLoadConfigFromFile(t *testing.T) {
 	if cfg.Election.LeaseTTLMs != 15000 {
 		t.Errorf("Election.LeaseTTLMs = %d, want 15000", cfg.Election.LeaseTTLMs)
 	}
-	if cfg.Election.RenewIntervalMs != 5000 {
-		t.Errorf("Election.RenewIntervalMs = %d, want 5000", cfg.Election.RenewIntervalMs)
+	if cfg.Election.HeartbeatIntervalMs != 5000 {
+		t.Errorf("Election.HeartbeatIntervalMs = %d, want 5000", cfg.Election.HeartbeatIntervalMs)
 	}
 }
 
@@ -281,8 +281,8 @@ func TestWriteConfigToFile(t *testing.T) {
 			Interface: "eth0",
 		},
 		Election: ElectionConfig{
-			LeaseTTLMs:      10000,
-			RenewIntervalMs: 3000,
+			LeaseTTLMs:          10000,
+			HeartbeatIntervalMs: 3000,
 		},
 	}
 
@@ -316,8 +316,8 @@ func TestToNodeConfig(t *testing.T) {
 			Credentials: "/path/to/creds",
 		},
 		Election: ElectionConfig{
-			LeaseTTLMs:      15000,
-			RenewIntervalMs: 5000,
+			LeaseTTLMs:          15000,
+			HeartbeatIntervalMs: 5000,
 		},
 	}
 
@@ -338,8 +338,8 @@ func TestToNodeConfig(t *testing.T) {
 	if nodeCfg.LeaseTTL != 15*time.Second {
 		t.Errorf("LeaseTTL = %v, want %v", nodeCfg.LeaseTTL, 15*time.Second)
 	}
-	if nodeCfg.RenewInterval != 5*time.Second {
-		t.Errorf("RenewInterval = %v, want %v", nodeCfg.RenewInterval, 5*time.Second)
+	if nodeCfg.HeartbeatInterval != 5*time.Second {
+		t.Errorf("HeartbeatInterval = %v, want %v", nodeCfg.HeartbeatInterval, 5*time.Second)
 	}
 }
 

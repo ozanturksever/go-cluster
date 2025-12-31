@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ozanturksever/go-cluster/health"
 	"github.com/ozanturksever/go-cluster/vip"
 )
 
@@ -22,7 +21,6 @@ type Manager struct {
 	mu        sync.RWMutex
 	node      *Node
 	vipMgr    *vip.Manager
-	healthChk *health.Checker
 	running   bool
 	startedAt time.Time
 	stopCh    chan struct{}
@@ -196,7 +194,7 @@ func (m *Manager) Status(ctx context.Context) (*Status, error) {
 		// Wait briefly to sync state
 		time.Sleep(time.Second)
 
-		status.Connected = true
+		status.Connected = tempNode.Connected()
 		status.Role = tempNode.Role()
 		status.Leader = tempNode.Leader()
 		status.Epoch = tempNode.Epoch()
@@ -204,7 +202,7 @@ func (m *Manager) Status(ctx context.Context) (*Status, error) {
 	}
 
 	// Get status from running node
-	status.Connected = true
+	status.Connected = node.Connected()
 	status.Role = node.Role()
 	status.Leader = node.Leader()
 	status.Epoch = node.Epoch()
@@ -345,7 +343,6 @@ func (m *Manager) RunDaemon(ctx context.Context) error {
 		m.running = false
 		m.node = nil
 		m.vipMgr = nil
-		m.healthChk = nil
 		m.mu.Unlock()
 	}()
 
@@ -394,31 +391,9 @@ func (m *Manager) RunDaemon(ctx context.Context) error {
 		m.mu.Unlock()
 	}
 
-	// Initialize health checker
-	healthCfg := health.Config{
-		ClusterID:       m.cfg.ClusterID,
-		NodeID:          m.cfg.NodeID,
-		NATSURLs:        m.cfg.NATS.Servers,
-		NATSCredentials: m.cfg.NATS.Credentials,
-		Logger:          m.logger,
-	}
-	healthChk, err := health.NewChecker(healthCfg)
-	if err != nil {
-		return fmt.Errorf("failed to create health checker: %w", err)
-	}
-
-	m.mu.Lock()
-	m.healthChk = healthChk
-	m.mu.Unlock()
-
 	// Start the node
 	if err := node.Start(ctx); err != nil {
 		return fmt.Errorf("failed to start node: %w", err)
-	}
-
-	// Start health checker
-	if err := healthChk.Start(ctx); err != nil {
-		m.logger.Warn("failed to start health checker", "error", err)
 	}
 
 	m.logger.Info("daemon started")
@@ -427,9 +402,6 @@ func (m *Manager) RunDaemon(ctx context.Context) error {
 	<-ctx.Done()
 
 	m.logger.Info("daemon stopping")
-
-	// Stop health checker
-	healthChk.Stop()
 
 	// Release VIP if held
 	m.mu.RLock()
@@ -468,19 +440,12 @@ func (h *managerInternalHooks) OnBecomeLeader(ctx context.Context) error {
 	// Acquire VIP
 	h.manager.mu.RLock()
 	vipMgr := h.manager.vipMgr
-	healthChk := h.manager.healthChk
 	h.manager.mu.RUnlock()
 
 	if vipMgr != nil {
 		if err := vipMgr.Acquire(ctx); err != nil {
 			h.manager.logger.Error("failed to acquire VIP", "error", err)
 		}
-	}
-
-	// Update health checker
-	if healthChk != nil {
-		healthChk.SetRole("PRIMARY")
-		healthChk.SetLeader(h.manager.cfg.NodeID)
 	}
 
 	// Call user hook
@@ -491,7 +456,6 @@ func (h *managerInternalHooks) OnLoseLeadership(ctx context.Context) error {
 	// Release VIP
 	h.manager.mu.RLock()
 	vipMgr := h.manager.vipMgr
-	healthChk := h.manager.healthChk
 	h.manager.mu.RUnlock()
 
 	if vipMgr != nil {
@@ -500,25 +464,30 @@ func (h *managerInternalHooks) OnLoseLeadership(ctx context.Context) error {
 		}
 	}
 
-	// Update health checker
-	if healthChk != nil {
-		healthChk.SetRole("PASSIVE")
-	}
-
 	// Call user hook
 	return h.wrapped.OnLoseLeadership(ctx)
 }
 
 func (h *managerInternalHooks) OnLeaderChange(ctx context.Context, nodeID string) error {
-	// Update health checker with new leader
-	h.manager.mu.RLock()
-	healthChk := h.manager.healthChk
-	h.manager.mu.RUnlock()
-
-	if healthChk != nil {
-		healthChk.SetLeader(nodeID)
-	}
-
 	// Call user hook
 	return h.wrapped.OnLeaderChange(ctx, nodeID)
 }
+
+func (h *managerInternalHooks) OnNATSReconnect(ctx context.Context) error {
+	return h.wrapped.OnNATSReconnect(ctx)
+}
+
+func (h *managerInternalHooks) OnNATSDisconnect(ctx context.Context, err error) error {
+	return h.wrapped.OnNATSDisconnect(ctx, err)
+}
+
+func (h *managerInternalHooks) OnDaemonStart(ctx context.Context) error {
+	return h.wrapped.OnDaemonStart(ctx)
+}
+
+func (h *managerInternalHooks) OnDaemonStop(ctx context.Context) error {
+	return h.wrapped.OnDaemonStop(ctx)
+}
+
+// Verify interface implementation
+var _ ManagerHooks = (*managerInternalHooks)(nil)

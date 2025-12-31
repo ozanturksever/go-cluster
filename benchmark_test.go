@@ -53,11 +53,11 @@ func BenchmarkSingleNodeLeadershipAcquisition(b *testing.B) {
 		clusterID := fmt.Sprintf("bench-cluster-%d", i)
 
 		cfg := Config{
-			ClusterID:     clusterID,
-			NodeID:        "node-1",
-			NATSURLs:      []string{natsURL},
-			LeaseTTL:      3 * time.Second,
-			RenewInterval: 1 * time.Second,
+			ClusterID:         clusterID,
+			NodeID:            "node-1",
+			NATSURLs:          []string{natsURL},
+			LeaseTTL:          3 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
 		}
 
 		var becameLeader atomic.Bool
@@ -120,19 +120,19 @@ func BenchmarkTwoNodeFailover(b *testing.B) {
 		clusterID := fmt.Sprintf("failover-bench-%d", i)
 
 		cfg1 := Config{
-			ClusterID:     clusterID,
-			NodeID:        "node-1",
-			NATSURLs:      []string{natsURL},
-			LeaseTTL:      3 * time.Second,
-			RenewInterval: 1 * time.Second,
+			ClusterID:         clusterID,
+			NodeID:            "node-1",
+			NATSURLs:          []string{natsURL},
+			LeaseTTL:          3 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
 		}
 
 		cfg2 := Config{
-			ClusterID:     clusterID,
-			NodeID:        "node-2",
-			NATSURLs:      []string{natsURL},
-			LeaseTTL:      3 * time.Second,
-			RenewInterval: 1 * time.Second,
+			ClusterID:         clusterID,
+			NodeID:            "node-2",
+			NATSURLs:          []string{natsURL},
+			LeaseTTL:          3 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
 		}
 
 		var node1Leader atomic.Bool
@@ -225,19 +225,19 @@ func BenchmarkGracefulStepdownFailover(b *testing.B) {
 		clusterID := fmt.Sprintf("stepdown-bench-%d", i)
 
 		cfg1 := Config{
-			ClusterID:     clusterID,
-			NodeID:        "node-1",
-			NATSURLs:      []string{natsURL},
-			LeaseTTL:      3 * time.Second,
-			RenewInterval: 1 * time.Second,
+			ClusterID:         clusterID,
+			NodeID:            "node-1",
+			NATSURLs:          []string{natsURL},
+			LeaseTTL:          3 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
 		}
 
 		cfg2 := Config{
-			ClusterID:     clusterID,
-			NodeID:        "node-2",
-			NATSURLs:      []string{natsURL},
-			LeaseTTL:      3 * time.Second,
-			RenewInterval: 1 * time.Second,
+			ClusterID:         clusterID,
+			NodeID:            "node-2",
+			NATSURLs:          []string{natsURL},
+			LeaseTTL:          3 * time.Second,
+			HeartbeatInterval: 1 * time.Second,
 		}
 
 		var node1Leader atomic.Bool
@@ -313,9 +313,9 @@ func BenchmarkFailoverByLeaseTTL(b *testing.B) {
 	}
 
 	ttlConfigs := []struct {
-		name          string
-		leaseTTL      time.Duration
-		renewInterval time.Duration
+		name              string
+		leaseTTL          time.Duration
+		heartbeatInterval time.Duration
 	}{
 		{"TTL-1s", 1 * time.Second, 300 * time.Millisecond},
 		{"TTL-3s", 3 * time.Second, 1 * time.Second},
@@ -336,20 +336,20 @@ func BenchmarkFailoverByLeaseTTL(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				clusterID := fmt.Sprintf("ttl-bench-%s-%d", tc.name, i)
 
-				cfg1 := Config{
-					ClusterID:     clusterID,
-					NodeID:        "node-1",
-					NATSURLs:      []string{natsURL},
-					LeaseTTL:      tc.leaseTTL,
-					RenewInterval: tc.renewInterval,
+						cfg1 := Config{
+					ClusterID:         clusterID,
+					NodeID:            "node-1",
+					NATSURLs:          []string{natsURL},
+					LeaseTTL:          tc.leaseTTL,
+					HeartbeatInterval: tc.heartbeatInterval,
 				}
 
 				cfg2 := Config{
-					ClusterID:     clusterID,
-					NodeID:        "node-2",
-					NATSURLs:      []string{natsURL},
-					LeaseTTL:      tc.leaseTTL,
-					RenewInterval: tc.renewInterval,
+					ClusterID:         clusterID,
+					NodeID:            "node-2",
+					NATSURLs:          []string{natsURL},
+					LeaseTTL:          tc.leaseTTL,
+					HeartbeatInterval: tc.heartbeatInterval,
 				}
 
 				var node1Leader atomic.Bool
@@ -436,11 +436,11 @@ func BenchmarkManagerFailover(b *testing.B) {
 
 		cfg1 := NewDefaultFileConfig(clusterID, "node-1", []string{natsURL})
 		cfg1.Election.LeaseTTLMs = 3000
-		cfg1.Election.RenewIntervalMs = 1000
+		cfg1.Election.HeartbeatIntervalMs = 1000
 
 		cfg2 := NewDefaultFileConfig(clusterID, "node-2", []string{natsURL})
 		cfg2.Election.LeaseTTLMs = 3000
-		cfg2.Election.RenewIntervalMs = 1000
+		cfg2.Election.HeartbeatIntervalMs = 1000
 
 		var node1Leader atomic.Bool
 		var node2Leader atomic.Bool
@@ -528,6 +528,14 @@ func (h *benchmarkHooks) OnLeaderChange(ctx context.Context, nodeID string) erro
 	return nil
 }
 
+func (h *benchmarkHooks) OnNATSReconnect(ctx context.Context) error {
+	return nil
+}
+
+func (h *benchmarkHooks) OnNATSDisconnect(ctx context.Context, err error) error {
+	return nil
+}
+
 var _ Hooks = (*benchmarkHooks)(nil)
 
 // benchmarkManagerHooks implements ManagerHooks for benchmarks.
@@ -557,6 +565,14 @@ func (h *benchmarkManagerHooks) OnLeaderChange(ctx context.Context, nodeID strin
 	if h.onLeaderChange != nil {
 		return h.onLeaderChange(ctx, nodeID)
 	}
+	return nil
+}
+
+func (h *benchmarkManagerHooks) OnNATSReconnect(ctx context.Context) error {
+	return nil
+}
+
+func (h *benchmarkManagerHooks) OnNATSDisconnect(ctx context.Context, err error) error {
 	return nil
 }
 

@@ -41,4 +41,16 @@ var (
 
 	// ErrAnotherLeaderExists indicates another node is currently the leader.
 	ErrAnotherLeaderExists = errors.New("another node is currently the leader")
+
+	// ErrNATSDisconnected indicates the NATS connection is not available.
+	ErrNATSDisconnected = errors.New("NATS connection disconnected")
+
+	// ErrNATSClosed indicates the NATS connection was permanently closed.
+	ErrNATSClosed = errors.New("NATS connection closed")
+
+	// ErrWatcherClosed indicates the KV watcher was closed unexpectedly.
+	ErrWatcherClosed = errors.New("KV watcher closed")
+
+	// ErrServiceNotRunning indicates the micro service is not running.
+	ErrServiceNotRunning = errors.New("micro service not running")
 )

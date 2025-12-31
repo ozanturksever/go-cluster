@@ -9,6 +9,7 @@ import (
 
 	"github.com/ozanturksever/go-cluster/vip"
 
+	"github.com/testcontainers/testcontainers-go"
 	natsmodule "github.com/testcontainers/testcontainers-go/modules/nats"
 )
 
@@ -23,13 +24,14 @@ func TestE2E_TwoNodeFailover(t *testing.T) {
 	defer cleanup()
 
 	// Create two managers
+	// Use shorter LeaseTTL for faster crash recovery test
 	cfg1 := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
-	cfg1.Election.LeaseTTLMs = 3000
-	cfg1.Election.RenewIntervalMs = 1000
+	cfg1.Election.LeaseTTLMs = 2000
+	cfg1.Election.HeartbeatIntervalMs = 500
 
 	cfg2 := NewDefaultFileConfig("test-cluster", "node-2", []string{natsURL})
-	cfg2.Election.LeaseTTLMs = 3000
-	cfg2.Election.RenewIntervalMs = 1000
+	cfg2.Election.LeaseTTLMs = 2000
+	cfg2.Election.HeartbeatIntervalMs = 500
 
 	var node1BecameLeader atomic.Bool
 	var node2BecameLeader atomic.Bool
@@ -112,12 +114,13 @@ func TestE2E_TwoNodeFailover(t *testing.T) {
 		t.Errorf("leader status.Role = %v, want %v", status.Role, RolePrimary)
 	}
 
-	// Stop the leader
+	// Stop the leader (crash scenario - not graceful stepdown)
 	t.Log("stopping the leader...")
 	leaderCtxCancel()
 	<-leaderErrCh
 
-	// Wait for the other node to become leader
+	// Wait for the other node to become leader (needs to wait for lease expiry)
+	// With LeaseTTL=2s, we should wait at least 3-4 seconds for the lease to expire
 	deadline = time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if node1BecameLeader.Load() && node2BecameLeader.Load() {
@@ -145,11 +148,11 @@ func TestE2E_PromoteDemote(t *testing.T) {
 
 	cfg1 := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg1.Election.LeaseTTLMs = 3000
-	cfg1.Election.RenewIntervalMs = 1000
+	cfg1.Election.HeartbeatIntervalMs = 1000
 
 	cfg2 := NewDefaultFileConfig("test-cluster", "node-2", []string{natsURL})
 	cfg2.Election.LeaseTTLMs = 3000
-	cfg2.Election.RenewIntervalMs = 1000
+	cfg2.Election.HeartbeatIntervalMs = 1000
 
 	var node1BecameLeader atomic.Bool
 	var node2BecameLeader atomic.Bool
@@ -264,9 +267,10 @@ func TestE2E_VIPFailover(t *testing.T) {
 	// Use mock VIP executor
 	mockExec := &mockVIPExecutor{}
 
+	// Use shorter LeaseTTL for faster crash recovery test
 	cfg1 := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
-	cfg1.Election.LeaseTTLMs = 3000
-	cfg1.Election.RenewIntervalMs = 1000
+	cfg1.Election.LeaseTTLMs = 2000
+	cfg1.Election.HeartbeatIntervalMs = 500
 	cfg1.VIP = VIPFileConfig{
 		Address:   "192.168.1.100",
 		Netmask:   24,
@@ -274,8 +278,8 @@ func TestE2E_VIPFailover(t *testing.T) {
 	}
 
 	cfg2 := NewDefaultFileConfig("test-cluster", "node-2", []string{natsURL})
-	cfg2.Election.LeaseTTLMs = 3000
-	cfg2.Election.RenewIntervalMs = 1000
+	cfg2.Election.LeaseTTLMs = 2000
+	cfg2.Election.HeartbeatIntervalMs = 500
 	cfg2.VIP = VIPFileConfig{
 		Address:   "192.168.1.100",
 		Netmask:   24,
@@ -341,12 +345,13 @@ func TestE2E_VIPFailover(t *testing.T) {
 	go mgr2.RunDaemon(ctx2)
 	time.Sleep(2 * time.Second)
 
-	// Stop node1 (should release VIP)
+	// Stop node1 (crash scenario - not graceful stepdown)
+	// This tests crash recovery where the lease must expire before failover
 	t.Log("stopping node-1...")
 	cancel1()
-	time.Sleep(2 * time.Second)
 
-	// Wait for node2 to become leader
+	// Wait for node2 to become leader (needs to wait for lease expiry)
+	// With LeaseTTL=2s, we should wait at least 3-4 seconds for the lease to expire
 	deadline = time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if node2BecameLeader.Load() {
@@ -379,18 +384,26 @@ func TestE2E_StatusConsistency(t *testing.T) {
 	defer cleanup()
 
 	cfg1 := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
-	cfg1.Election.LeaseTTLMs = 3000
-	cfg1.Election.RenewIntervalMs = 1000
+	cfg1.Election.LeaseTTLMs = 2000
+	cfg1.Election.HeartbeatIntervalMs = 500
 
 	cfg2 := NewDefaultFileConfig("test-cluster", "node-2", []string{natsURL})
-	cfg2.Election.LeaseTTLMs = 3000
-	cfg2.Election.RenewIntervalMs = 1000
+	cfg2.Election.LeaseTTLMs = 2000
+	cfg2.Election.HeartbeatIntervalMs = 500
 
 	var node1BecameLeader atomic.Bool
+	var node2BecameLeader atomic.Bool
 
 	hooks1 := &testManagerHooks{
 		onBecomeLeader: func(ctx context.Context) error {
 			node1BecameLeader.Store(true)
+			return nil
+		},
+	}
+
+	hooks2 := &testManagerHooks{
+		onBecomeLeader: func(ctx context.Context) error {
+			node2BecameLeader.Store(true)
 			return nil
 		},
 	}
@@ -400,7 +413,7 @@ func TestE2E_StatusConsistency(t *testing.T) {
 		t.Fatalf("NewManager(node-1) error = %v", err)
 	}
 
-	mgr2, err := NewManager(*cfg2, nil)
+	mgr2, err := NewManager(*cfg2, hooks2)
 	if err != nil {
 		t.Fatalf("NewManager(node-2) error = %v", err)
 	}
@@ -414,20 +427,28 @@ func TestE2E_StatusConsistency(t *testing.T) {
 	go mgr1.RunDaemon(ctx1)
 	go mgr2.RunDaemon(ctx2)
 
-	// Wait for node1 to become leader
+	// Wait for one node to become leader (could be either)
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if node1BecameLeader.Load() {
+		if node1BecameLeader.Load() || node2BecameLeader.Load() {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	if !node1BecameLeader.Load() {
-		t.Fatal("node-1 did not become leader")
+	if !node1BecameLeader.Load() && !node2BecameLeader.Load() {
+		t.Fatal("neither node became leader")
 	}
 
-	// Give node2 time to detect the leader
+	// Determine which node is the leader
+	var expectedLeader string
+	if node1BecameLeader.Load() {
+		expectedLeader = "node-1"
+	} else {
+		expectedLeader = "node-2"
+	}
+
+	// Give the other node time to detect the leader
 	time.Sleep(2 * time.Second)
 
 	// Get status from both nodes
@@ -446,22 +467,29 @@ func TestE2E_StatusConsistency(t *testing.T) {
 		t.Errorf("status1.Leader = %q, status2.Leader = %q, want same leader", status1.Leader, status2.Leader)
 	}
 
-	// Node1 should be PRIMARY
-	if status1.Role != RolePrimary {
-		t.Errorf("status1.Role = %v, want %v", status1.Role, RolePrimary)
+	// Both should report the expected leader
+	if status1.Leader != expectedLeader {
+		t.Errorf("status1.Leader = %q, want %q", status1.Leader, expectedLeader)
+	}
+	if status2.Leader != expectedLeader {
+		t.Errorf("status2.Leader = %q, want %q", status2.Leader, expectedLeader)
 	}
 
-	// Node2 should be PASSIVE
-	if status2.Role != RolePassive {
-		t.Errorf("status2.Role = %v, want %v", status2.Role, RolePassive)
-	}
-
-	// Both should report node-1 as leader
-	if status1.Leader != "node-1" {
-		t.Errorf("status1.Leader = %q, want %q", status1.Leader, "node-1")
-	}
-	if status2.Leader != "node-1" {
-		t.Errorf("status2.Leader = %q, want %q", status2.Leader, "node-1")
+	// Verify roles are correct based on which node became leader
+	if expectedLeader == "node-1" {
+		if status1.Role != RolePrimary {
+			t.Errorf("status1.Role = %v, want %v", status1.Role, RolePrimary)
+		}
+		if status2.Role != RolePassive {
+			t.Errorf("status2.Role = %v, want %v", status2.Role, RolePassive)
+		}
+	} else {
+		if status2.Role != RolePrimary {
+			t.Errorf("status2.Role = %v, want %v", status2.Role, RolePrimary)
+		}
+		if status1.Role != RolePassive {
+			t.Errorf("status1.Role = %v, want %v", status1.Role, RolePassive)
+		}
 	}
 
 	t.Log("status consistency verified")
@@ -479,7 +507,7 @@ func TestE2E_DaemonHooks(t *testing.T) {
 
 	cfg := NewDefaultFileConfig("test-cluster", "node-1", []string{natsURL})
 	cfg.Election.LeaseTTLMs = 3000
-	cfg.Election.RenewIntervalMs = 1000
+	cfg.Election.HeartbeatIntervalMs = 1000
 
 	var daemonStarted atomic.Bool
 	var daemonStopped atomic.Bool
@@ -528,7 +556,7 @@ func TestE2E_DaemonHooks(t *testing.T) {
 func startE2ENATSContainer(ctx context.Context, t *testing.T) (string, func()) {
 	t.Helper()
 
-	container, err := natsmodule.Run(ctx, "nats:latest")
+	container, err := natsmodule.Run(ctx, "nats:latest", testcontainers.WithCmd("--jetstream"))
 	if err != nil {
 		t.Fatalf("failed to start NATS container: %v", err)
 	}

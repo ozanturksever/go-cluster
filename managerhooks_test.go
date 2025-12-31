@@ -2,10 +2,11 @@ package cluster
 
 import (
 	"context"
+	"errors"
 	"testing"
 )
 
-func TestNoOpManagerHooks(t *testing.T) {
+func TestNoOpManagerHooksImplementation(t *testing.T) {
 	hooks := NoOpManagerHooks{}
 	ctx := context.Background()
 
@@ -19,6 +20,12 @@ func TestNoOpManagerHooks(t *testing.T) {
 	if err := hooks.OnLeaderChange(ctx, "node-1"); err != nil {
 		t.Errorf("OnLeaderChange() error = %v", err)
 	}
+	if err := hooks.OnNATSReconnect(ctx); err != nil {
+		t.Errorf("OnNATSReconnect() error = %v", err)
+	}
+	if err := hooks.OnNATSDisconnect(ctx, errors.New("test error")); err != nil {
+		t.Errorf("OnNATSDisconnect() error = %v", err)
+	}
 	if err := hooks.OnDaemonStart(ctx); err != nil {
 		t.Errorf("OnDaemonStart() error = %v", err)
 	}
@@ -27,7 +34,7 @@ func TestNoOpManagerHooks(t *testing.T) {
 	}
 }
 
-func TestManagerHooksInterface(t *testing.T) {
+func TestManagerHooksInterfaceImplementation(t *testing.T) {
 	// Verify that NoOpManagerHooks implements ManagerHooks
 	var _ ManagerHooks = NoOpManagerHooks{}
 
@@ -37,12 +44,15 @@ func TestManagerHooksInterface(t *testing.T) {
 	_ = h
 }
 
-func TestNoOpManagerHooksEmbedsNoOpHooks(t *testing.T) {
+func TestNoOpManagerHooksEmbedsNoOpHooksCorrectly(t *testing.T) {
 	hooks := NoOpManagerHooks{}
 
 	// The embedded NoOpHooks should work
 	ctx := context.Background()
 	if err := hooks.NoOpHooks.OnBecomeLeader(ctx); err != nil {
 		t.Errorf("NoOpHooks.OnBecomeLeader() error = %v", err)
+	}
+	if err := hooks.NoOpHooks.OnNATSReconnect(ctx); err != nil {
+		t.Errorf("NoOpHooks.OnNATSReconnect() error = %v", err)
 	}
 }
