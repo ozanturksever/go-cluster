@@ -163,11 +163,11 @@
 - [x] Add lock holder tracking and visibility (`Holder()` method)
 
 ### 3.6 VIP Manager
-- [ ] Create `vip/` package (partially exists in old impl)
-- [ ] Implement `vip.Manager` with acquire/release
-- [ ] Add VIP health checking (ARP, ping)
-- [ ] Implement graceful VIP migration on failover
-- [ ] Add VIP audit events
+- [x] Create `vip/` package
+- [x] Implement `vip.Manager` with acquire/release
+- [x] Add VIP health checking (interface monitoring)
+- [x] Implement graceful VIP migration on failover (via OnAcquired/OnReleased callbacks)
+- [ ] Add VIP audit events (deferred - low priority)
 
 ### 3.7 Testing (Phase 3)
 - [x] Unit tests for cross-app RPC routing (`api_test.go`)
@@ -178,8 +178,9 @@
   - [x] Platform lock coordination between apps
   - [x] Multi-node cross-app communication
   - [x] Event-driven saga pattern
-- [ ] E2E test: VIP failover
-- [ ] Create `scripts/validate-split-brain.sh`
+- [x] Unit tests for VIP manager (`vip/manager_test.go`)
+- [ ] E2E test: VIP failover (requires root/CAP_NET_ADMIN - manual testing)
+- [x] Create `scripts/validate-split-brain.sh`
 
 ---
 
@@ -438,65 +439,68 @@
 
 > **Spec**: `11-deployment.md`
 > **Priority**: LOW
+> **Status**: ✅ COMPLETED (CLI)
 
 ### 9.1 CLI Implementation
-- [ ] Create `cmd/go-cluster/` main package
-- [ ] Implement subcommand structure with cobra
+- [x] Create `cmd/go-cluster/` main package
+- [x] Implement subcommand structure with cobra
 
 #### Node Commands
-- [ ] `go-cluster node list` - List nodes in platform
-- [ ] `go-cluster node status <node-id>` - Show node status
-- [ ] `go-cluster node drain <node-id>` - Drain node
-- [ ] `go-cluster node label <node-id> key=value` - Set/remove labels
-- [ ] `go-cluster node cordon/uncordon <node-id>` - Mark node schedulable
+- [x] `go-cluster node list` - List nodes in platform
+- [x] `go-cluster node status <node-id>` - Show node status
+- [x] `go-cluster node drain <node-id>` - Drain node
+- [x] `go-cluster node label <node-id> key=value` - Set/remove labels
+- [x] `go-cluster node cordon/uncordon <node-id>` - Mark node schedulable
 
 #### App Commands
-- [ ] `go-cluster app list` - List apps
-- [ ] `go-cluster app status <app>` - Show app status
-- [ ] `go-cluster app move <app> --from <node> --to <node>` - Move app
-- [ ] `go-cluster app rebalance <app>` - Rebalance app instances
+- [x] `go-cluster app list` - List apps
+- [x] `go-cluster app status <app>` - Show app status
+- [x] `go-cluster app move <app> --from <node> --to <node>` - Move app
+- [x] `go-cluster app rebalance <app>` - Rebalance app instances
 
 #### Cluster Commands
-- [ ] `go-cluster run` - Run daemon
-- [ ] `go-cluster status` - Show cluster status
-- [ ] `go-cluster stepdown` - Gracefully step down as leader
-- [ ] `go-cluster health` - Check health
+- [x] `go-cluster run` - Run daemon
+- [x] `go-cluster status` - Show cluster status
+- [x] `go-cluster stepdown` - Gracefully step down as leader
+- [x] `go-cluster health` - Check health
 
 #### Data Commands
-- [ ] `go-cluster snapshot create` - Create snapshot
-- [ ] `go-cluster snapshot list` - List snapshots
-- [ ] `go-cluster snapshot restore <id>` - Restore snapshot
+- [x] `go-cluster snapshot create` - Create snapshot
+- [x] `go-cluster snapshot list` - List snapshots
+- [x] `go-cluster snapshot restore <id>` - Restore snapshot
+- [x] `go-cluster snapshot delete <id>` - Delete snapshot
 
 #### Service Commands
-- [ ] `go-cluster services list` - List services
-- [ ] `go-cluster services show <app> <service>` - Show service details
-- [ ] `go-cluster services export --format <format>` - Export for Prometheus/Consul
+- [x] `go-cluster services list` - List services
+- [x] `go-cluster services show <app> <service>` - Show service details
+- [x] `go-cluster services export --format <format>` - Export for Prometheus/Consul
 
 #### Leaf Commands
-- [ ] `go-cluster leaf list` - List leaf connections
-- [ ] `go-cluster leaf status <platform>` - Show leaf status
-- [ ] `go-cluster leaf promote <platform>` - Promote leaf to hub
+- [x] `go-cluster leaf list` - List leaf connections
+- [x] `go-cluster leaf status <platform>` - Show leaf status
+- [x] `go-cluster leaf promote <platform>` - Promote leaf to hub
+- [x] `go-cluster leaf ping <platform>` - Ping a leaf platform
 
 ### 9.2 Configuration
-- [ ] Implement YAML/JSON config file support
-- [ ] Add environment variable support
-- [ ] Implement config validation
+- [x] Implement YAML/JSON config file support (via viper)
+- [x] Add environment variable support (NATS_URL, NODE_ID, PLATFORM)
+- [x] Implement config validation
 - [ ] Add config file generation (`go-cluster init`)
 
 ### 9.3 Packaging
-- [ ] Create GoReleaser configuration
-- [ ] Build for Linux, macOS, Windows
-- [ ] Create checksums and signatures
+- [x] Create GoReleaser configuration (`.goreleaser.yaml`)
+- [x] Build for Linux, macOS, Windows (multi-arch: amd64, arm64)
+- [x] Create checksums and signatures
 
 ### 9.4 Systemd Integration
-- [ ] Create systemd service template (`go-cluster@.service`)
-- [ ] Add systemd notify support
-- [ ] Create environment file template
+- [x] Create systemd service template (`packaging/go-cluster.service`)
+- [x] Add systemd notify support
+- [x] Create environment file template (`packaging/go-cluster.yaml`)
 
 ### 9.5 Container Images
-- [ ] Create minimal Dockerfile
-- [ ] Publish to ghcr.io
-- [ ] Create docker-compose examples
+- [x] Create minimal Dockerfile (`Dockerfile.goreleaser`)
+- [x] Publish to ghcr.io (via GoReleaser)
+- [x] Create docker-compose examples (`examples/docker-compose/`)
 
 ### 9.6 Kubernetes
 - [ ] Create StatefulSet manifests
@@ -533,9 +537,9 @@
 - [ ] Migration guide (from old implementation)
 
 ### Examples
-- [ ] `examples/basic/` - Simple active-passive
-- [ ] `examples/convex-backend/` - Full Convex integration
-- [ ] `examples/distributed-cache/` - Ring pattern cache
+- [x] `examples/basic/` - Simple active-passive
+- [x] `examples/convex-backend/` - Full Convex integration
+- [x] `examples/distributed-cache/` - Ring pattern cache
 - [ ] `examples/api-gateway/` - Pool pattern API
 - [ ] `examples/multi-zone/` - Leaf node deployment
 
@@ -559,14 +563,21 @@
 
 ### Validation Scripts
 - [x] `scripts/validate-election.sh`
-- [ ] `scripts/validate-failover.sh`
+- [x] `scripts/validate-failover.sh`
 - [x] `scripts/validate-replication.sh`
-- [ ] `scripts/validate-split-brain.sh`
+- [x] `scripts/validate-split-brain.sh`
 - [x] `scripts/validate-migration.sh`
 - [x] `scripts/validate-discovery.sh`
 - [x] `scripts/validate-leaf-failover.sh`
-- [ ] `scripts/benchmark-failover.sh`
-- [ ] `scripts/common.sh` - shared utilities
+- [x] `scripts/benchmark-failover.sh`
+- [x] `scripts/common.sh` - shared utilities
+- [x] `scripts/validate-all.sh` - run all validations
+- [x] `scripts/validate-backend.sh`
+- [x] `scripts/validate-crossapp.sh`
+- [x] `scripts/validate-health.sh`
+- [x] `scripts/validate-locks.sh`
+- [x] `scripts/validate-ring.sh`
+- [x] `scripts/validate-vip.sh`
 
 ---
 

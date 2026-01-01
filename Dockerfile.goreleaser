@@ -1,0 +1,22 @@
+# Minimal Docker image for go-cluster
+# Built by GoReleaser - binary is copied in, not built here
+
+FROM alpine:3.19
+
+# Install ca-certificates for HTTPS connections and tzdata for timezones
+RUN apk --no-cache add ca-certificates tzdata
+
+# Create non-root user
+RUN adduser -D -g '' go-cluster
+
+# Copy the binary (provided by GoReleaser)
+COPY go-cluster /usr/local/bin/go-cluster
+
+# Use non-root user
+USER go-cluster
+
+# Default entrypoint
+ENTRYPOINT ["go-cluster"]
+
+# Default command (show help)
+CMD ["--help"]

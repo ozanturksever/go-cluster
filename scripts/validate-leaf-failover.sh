@@ -1,11 +1,26 @@
 #!/bin/bash
-# Validate leaf node failover functionality
-# This script tests the leaf node connection management and partition handling
+# validate-leaf-failover.sh - Validates leaf node failover functionality in go-cluster
+#
+# This script runs leaf node-related tests and validates:
+# - Leaf manager configuration (hub and leaf modes)
+# - Partition detection and handling
+# - Leaf tracking and quorum
+# - Cross-platform communication
+# - TLS configuration
+# - Heartbeat handling
+#
+# Usage: ./scripts/validate-leaf-failover.sh [options]
+#   -v, --verbose    Show verbose output
+#   -r, --race       Run with race detector
+#   -t, --timeout    Test timeout (default: 5m)
+#   -h, --help       Show this help message
 
 set -e
 
-echo "=== Leaf Node Failover Validation ==="
-echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+
+cd "$PROJECT_ROOT"
 
 # Colors for output
 RED='\033[0;31m'
@@ -13,148 +28,170 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Track test results
-TESTS_PASSED=0
-TESTS_FAILED=0
+# Default values
+VERBOSE=false
+RACE=false
+TIMEOUT="5m"
 
-pass() {
-    echo -e "${GREEN}✓ PASS${NC}: $1"
-    ((TESTS_PASSED++))
-}
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -r|--race)
+            RACE=true
+            shift
+            ;;
+        -t|--timeout)
+            TIMEOUT="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [options]"
+            echo "  -v, --verbose    Show verbose output"
+            echo "  -r, --race       Run with race detector"
+            echo "  -t, --timeout    Test timeout (default: 5m)"
+            echo "  -h, --help       Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
-fail() {
-    echo -e "${RED}✗ FAIL${NC}: $1"
-    ((TESTS_FAILED++))
-}
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}  go-cluster Leaf Node Failover Validation${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
 
-warn() {
-    echo -e "${YELLOW}⚠ WARN${NC}: $1"
-}
+# Build test flags
+TEST_FLAGS="-timeout ${TIMEOUT}"
+if [ "$VERBOSE" = true ]; then
+    TEST_FLAGS="${TEST_FLAGS} -v"
+fi
+if [ "$RACE" = true ]; then
+    TEST_FLAGS="${TEST_FLAGS} -race"
+fi
 
-# Check if NATS is available
-check_nats() {
-    echo "Checking NATS connectivity..."
-    if command -v nats &> /dev/null; then
-        if nats server check &> /dev/null; then
-            pass "NATS server is available"
-            return 0
-        else
-            warn "NATS server not responding"
-            return 1
+# Track results
+PASSED=0
+FAILED=0
+FAILED_TESTS=""
+
+# Function to run a test and track results
+run_test() {
+    local test_name=$1
+    local description=$2
+    
+    echo -n "  Testing: ${description}... "
+    
+    if go test ${TEST_FLAGS} -run "^${test_name}$" . > /tmp/test_output_$$.txt 2>&1; then
+        echo -e "${GREEN}PASSED${NC}"
+        PASSED=$((PASSED + 1))
+        if [ "$VERBOSE" = true ]; then
+            cat /tmp/test_output_$$.txt
         fi
     else
-        warn "NATS CLI not installed, skipping NATS checks"
-        return 1
+        echo -e "${RED}FAILED${NC}"
+        FAILED=$((FAILED + 1))
+        FAILED_TESTS="${FAILED_TESTS}\n  - ${test_name}"
+        if [ "$VERBOSE" = true ]; then
+            cat /tmp/test_output_$$.txt
+        fi
     fi
+    rm -f /tmp/test_output_$$.txt
 }
 
-# Run leaf node unit tests
-run_unit_tests() {
-    echo ""
-    echo "Running leaf node unit tests..."
-    
-    if go test -v -run "TestLeaf" -count=1 -timeout 60s ./... 2>&1 | tee /tmp/leaf-test-output.txt; then
-        pass "Leaf node unit tests passed"
-    else
-        fail "Leaf node unit tests failed"
-        cat /tmp/leaf-test-output.txt
-    fi
-}
+# Validate code compiles
+echo -e "${YELLOW}Checking code compilation...${NC}"
+if go build ./... > /tmp/build_output_$$.txt 2>&1; then
+    echo -e "  ${GREEN}✓${NC} Code compiles successfully"
+else
+    echo -e "  ${RED}✗${NC} Code compilation failed"
+    cat /tmp/build_output_$$.txt
+    rm -f /tmp/build_output_$$.txt
+    exit 1
+fi
+rm -f /tmp/build_output_$$.txt
+echo ""
 
-# Run partition handling tests
-run_partition_tests() {
-    echo ""
-    echo "Running partition handling tests..."
-    
-    if go test -v -run "TestPartition" -count=1 -timeout 60s ./... 2>&1 | tee /tmp/partition-test-output.txt; then
-        pass "Partition handling tests passed"
-    else
-        fail "Partition handling tests failed"
-    fi
-}
+echo -e "${YELLOW}Running Leaf Manager Unit Tests...${NC}"
+echo ""
 
-# Validate leaf manager configuration
-validate_leaf_config() {
-    echo ""
-    echo "Validating leaf configuration structures..."
-    
-    # Check that the code compiles
-    if go build ./...; then
-        pass "Code compiles successfully"
-    else
-        fail "Code compilation failed"
-        return 1
-    fi
-}
+# Leaf Manager configuration tests
+run_test "TestLeafManager_NewLeafManager" "New leaf manager creation"
+run_test "TestLeafManager_ConfigureAsHub" "Configure as hub"
+run_test "TestLeafManager_ConfigureAsLeaf" "Configure as leaf"
+run_test "TestLeafManager_ConfigureAsLeaf_Defaults" "Leaf configuration defaults"
 
-# Test TLS configuration loading
-test_tls_config() {
-    echo ""
-    echo "Testing TLS configuration..."
-    
-    if go test -v -run "TestTLSConfig" -count=1 -timeout 30s ./... 2>&1; then
-        pass "TLS configuration tests passed"
-    else
-        fail "TLS configuration tests failed"
-    fi
-}
+echo ""
+echo -e "${YELLOW}Running Partition Handling Tests...${NC}"
+echo ""
 
-# Test quorum calculations
-test_quorum() {
-    echo ""
-    echo "Testing quorum calculations..."
-    
-    if go test -v -run "TestLeafManager_Quorum" -count=1 -timeout 30s ./... 2>&1; then
-        pass "Quorum calculation tests passed"
-    else
-        fail "Quorum calculation tests failed"
-    fi
-}
+# Partition handling tests
+run_test "TestLeafManager_PartitionState" "Partition state tracking"
+run_test "TestPartitionStrategy" "Partition strategy modes"
+run_test "TestPartitionEvent_Types" "Partition event types"
 
-# Test callback registrations
-test_callbacks() {
-    echo ""
-    echo "Testing callback registrations..."
-    
-    if go test -v -run "TestLeafManager_Callbacks" -count=1 -timeout 30s ./... 2>&1; then
-        pass "Callback registration tests passed"
-    else
-        fail "Callback registration tests failed"
-    fi
-}
+echo ""
+echo -e "${YELLOW}Running Leaf Tracking Tests...${NC}"
+echo ""
 
-# Main execution
-main() {
-    echo "Starting leaf node validation at $(date)"
-    echo ""
-    
-    # Validate configuration
-    validate_leaf_config
-    
-    # Run tests
-    run_unit_tests
-    run_partition_tests
-    test_tls_config
-    test_quorum
-    test_callbacks
-    
-    # Check NATS if available
-    check_nats
-    
-    # Summary
-    echo ""
-    echo "=== Validation Summary ==="
-    echo -e "Tests Passed: ${GREEN}${TESTS_PASSED}${NC}"
-    echo -e "Tests Failed: ${RED}${TESTS_FAILED}${NC}"
-    echo ""
-    
-    if [ $TESTS_FAILED -eq 0 ]; then
-        echo -e "${GREEN}All leaf node validations passed!${NC}"
-        exit 0
-    else
-        echo -e "${RED}Some validations failed. Please review the output above.${NC}"
-        exit 1
-    fi
-}
+# Leaf tracking and quorum tests
+run_test "TestLeafManager_LeafTracking" "Leaf tracking"
+run_test "TestLeafManager_Quorum" "Quorum calculations"
+run_test "TestLeafManager_Callbacks" "Callback registrations"
 
-main "$@"
+echo ""
+echo -e "${YELLOW}Running Configuration Tests...${NC}"
+echo ""
+
+# Configuration tests
+run_test "TestLeafManager_StartStop_Standalone" "Start/stop standalone mode"
+run_test "TestTLSConfig" "TLS configuration loading"
+run_test "TestSplitSubject" "Subject splitting"
+run_test "TestLeafHeartbeat_Serialization" "Heartbeat serialization"
+run_test "TestLeafInfo_Fields" "Leaf info fields"
+run_test "TestLeafConnectionStatus_Values" "Connection status values"
+
+echo ""
+echo -e "${YELLOW}Running E2E Tests...${NC}"
+echo ""
+
+# E2E tests (these require NATS server)
+run_test "TestLeafE2E_HubAndLeafConnection" "Hub and leaf connection (E2E)"
+run_test "TestLeafE2E_LeafAnnouncement" "Leaf announcement (E2E)"
+run_test "TestLeafE2E_MultipleLeaves" "Multiple leaves (E2E)"
+run_test "TestLeafE2E_CrossPlatformRPC" "Cross-platform RPC (E2E)"
+run_test "TestLeafE2E_CrossPlatformEvents" "Cross-platform events (E2E)"
+run_test "TestLeafE2E_PartitionDetection" "Partition detection (E2E)"
+run_test "TestLeafE2E_LeafDisconnection" "Leaf disconnection (E2E)"
+run_test "TestLeafE2E_QuorumHandling" "Quorum handling (E2E)"
+run_test "TestLeafE2E_CrossPlatformServiceDiscovery" "Cross-platform service discovery (E2E)"
+run_test "TestLeafE2E_PingLatency" "Ping latency measurement (E2E)"
+run_test "TestLeafE2E_PartitionStrategyModes" "Partition strategy modes (E2E)"
+
+echo ""
+echo -e "${YELLOW}========================================${NC}"
+echo -e "${YELLOW}  Results${NC}"
+echo -e "${YELLOW}========================================${NC}"
+echo ""
+echo -e "  ${GREEN}Passed: ${PASSED}${NC}"
+echo -e "  ${RED}Failed: ${FAILED}${NC}"
+
+if [ $FAILED -gt 0 ]; then
+    echo ""
+    echo -e "${RED}Failed tests:${FAILED_TESTS}${NC}"
+    echo ""
+    echo -e "${RED}Leaf node failover validation FAILED${NC}"
+    exit 1
+else
+    echo ""
+    echo -e "${GREEN}All leaf node failover tests passed!${NC}"
+    echo -e "${GREEN}Leaf node failover validation SUCCESSFUL${NC}"
+    exit 0
+fi

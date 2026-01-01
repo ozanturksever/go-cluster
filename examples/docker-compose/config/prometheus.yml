@@ -1,0 +1,45 @@
+# Prometheus configuration for go-cluster monitoring
+# https://prometheus.io/docs/prometheus/latest/configuration/configuration/
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'go-cluster-demo'
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # go-cluster nodes
+  - job_name: 'go-cluster'
+    static_configs:
+      - targets:
+          - 'node-1:9090'
+          - 'node-2:9090'
+          - 'node-3:9090'
+        labels:
+          service: 'go-cluster'
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.+):9090'
+        target_label: node
+        replacement: '${1}'
+
+  # NATS servers
+  - job_name: 'nats'
+    static_configs:
+      - targets:
+          - 'nats-1:8222'
+          - 'nats-2:8222'
+          - 'nats-3:8222'
+        labels:
+          service: 'nats'
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: '(.+):8222'
+        target_label: node
+        replacement: '${1}'

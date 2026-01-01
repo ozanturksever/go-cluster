@@ -1,0 +1,28 @@
+# go-cluster configuration file
+# https://github.com/ozanturksever/go-cluster
+
+# NATS server URL
+nats_url: "nats://localhost:4222"
+
+# Node identifier (defaults to hostname if not set)
+# node_id: "node-1"
+
+# Platform/cluster name
+platform: "my-platform"
+
+# Health check HTTP address
+health_addr: ":8080"
+
+# Prometheus metrics HTTP address
+metrics_addr: ":9090"
+
+# Node labels for placement constraints
+labels:
+  # zone: "us-east-1a"
+  # role: "worker"
+
+# NATS credentials file (optional)
+# nats_creds: "/etc/go-cluster/nats.creds"
+
+# Verbose logging
+verbose: false

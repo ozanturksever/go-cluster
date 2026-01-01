@@ -1,0 +1,342 @@
+# yaml-language-server: $schema=https://goreleaser.com/static/schema.json
+# vim: set ts=2 sw=2 tw=0 fo=cnqoj
+
+# GoReleaser configuration for go-cluster
+# https://goreleaser.com/
+#
+# To test locally:
+#   goreleaser check                    # Validate config
+#   goreleaser build --snapshot --clean # Test build
+#   goreleaser release --snapshot --clean # Test full release
+#
+# To release:
+#   git tag -a v1.0.0 -m "Release v1.0.0"
+#   git push origin v1.0.0
+#   goreleaser release --clean
+
+version: 2
+
+project_name: go-cluster
+
+# Build configuration
+builds:
+  - id: go-cluster
+    main: ./cmd/go-cluster/main.go
+    binary: go-cluster
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # Ignore unsupported combinations
+    ignore:
+      - goos: windows
+        goarch: arm64
+    # Inject version information at build time
+    ldflags:
+      - -s -w
+      - -X github.com/ozanturksever/go-cluster/cmd/go-cluster/cmd.Version={{.Version}}
+      - -X github.com/ozanturksever/go-cluster/cmd/go-cluster/cmd.Commit={{.Commit}}
+      - -X github.com/ozanturksever/go-cluster/cmd/go-cluster/cmd.BuildDate={{.Date}}
+    # Reproducible builds
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+# Universal binaries for macOS (combines amd64 and arm64)
+universal_binaries:
+  - id: go-cluster-universal
+    ids:
+      - go-cluster
+    name_template: go-cluster
+    replace: true
+
+# Archive configuration
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # Use zip for Windows
+    format_overrides:
+      - goos: windows
+        format: zip
+    # Files to include in the archive
+    files:
+      - README.md
+      - LICENSE*
+      - CHANGELOG*
+      - examples/**/*
+      - spec/**/*
+
+# Checksum configuration
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# Snapshot configuration (for dev builds)
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# Changelog configuration
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - "^Merge pull request"
+      - "^Merge branch"
+  groups:
+    - title: "🚀 Features"
+      regexp: '^.*?(feat|feature)(\([\w\-]+\))?!?:\s.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?(fix|bugfix)(\([\w\-]+\))?!?:\s.+$'
+      order: 1
+    - title: "📚 Documentation"
+      regexp: '^.*?(doc|docs)(\([\w\-]+\))?!?:\s.+$'
+      order: 2
+    - title: "🔧 Maintenance"
+      regexp: '^.*?(refactor|perf|build)(\([\w\-]+\))?!?:\s.+$'
+      order: 3
+    - title: "⬆️ Dependencies"
+      regexp: '^.*?(deps|dep)(\([\w\-]+\))?!?:\s.+$'
+      order: 4
+    - title: "Other Changes"
+      order: 999
+
+# GitHub release configuration
+release:
+  github:
+    owner: ozanturksever
+    name: go-cluster
+  # Release name template
+  name_template: "v{{.Version}}"
+  # Draft release (set to false for auto-publish)
+  draft: false
+  # Mark as prerelease if version contains alpha, beta, rc
+  prerelease: auto
+  # Release header
+  header: |
+    ## go-cluster v{{.Version}}
+    
+    A NATS-native clustering toolkit for building HA applications in Go.
+    
+    ### Installation
+    
+    **Homebrew (macOS/Linux):**
+    ```bash
+    brew install ozanturksever/tap/go-cluster
+    ```
+    
+    **Go install:**
+    ```bash
+    go install github.com/ozanturksever/go-cluster/cmd/go-cluster@v{{.Version}}
+    ```
+    
+    **Binary download:**
+    Download the appropriate binary for your platform below.
+  # Release footer
+  footer: |
+    ---
+    
+    **Full Changelog**: https://github.com/ozanturksever/go-cluster/compare/{{ .PreviousTag }}...{{ .Tag }}
+    
+    **Documentation**: https://github.com/ozanturksever/go-cluster/tree/main/spec
+
+# Homebrew tap configuration
+brews:
+  - name: go-cluster
+    repository:
+      owner: ozanturksever
+      name: homebrew-tap
+      # Optional: use a specific branch
+      # branch: main
+      # Optional: use a token with write access
+      # token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    # Commit author
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    # Commit message template
+    commit_msg_template: "Brew formula update for {{ .ProjectName }} version {{ .Tag }}"
+    # Folder in the tap repository
+    directory: Formula
+    # Homepage
+    homepage: "https://github.com/ozanturksever/go-cluster"
+    # Description
+    description: "A NATS-native clustering toolkit for building HA applications in Go"
+    # License
+    license: "MIT"
+    # Skip upload (useful for testing)
+    # skip_upload: true
+    # Custom install script
+    install: |
+      bin.install "go-cluster"
+    # Test block
+    test: |
+      system "#{bin}/go-cluster", "version"
+    # Dependencies
+    # dependencies:
+    #   - name: nats-server
+    #     type: optional
+
+# Docker image configuration
+dockers:
+  - id: go-cluster-amd64
+    goos: linux
+    goarch: amd64
+    ids:
+      - go-cluster
+    image_templates:
+      - "ghcr.io/ozanturksever/go-cluster:{{ .Version }}-amd64"
+      - "ghcr.io/ozanturksever/go-cluster:latest-amd64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=A NATS-native clustering toolkit for building HA applications in Go"
+      - "--label=org.opencontainers.image.url=https://github.com/ozanturksever/go-cluster"
+      - "--label=org.opencontainers.image.source=https://github.com/ozanturksever/go-cluster"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    skip_push: auto
+  
+  - id: go-cluster-arm64
+    goos: linux
+    goarch: arm64
+    ids:
+      - go-cluster
+    image_templates:
+      - "ghcr.io/ozanturksever/go-cluster:{{ .Version }}-arm64"
+      - "ghcr.io/ozanturksever/go-cluster:latest-arm64"
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.description=A NATS-native clustering toolkit for building HA applications in Go"
+      - "--label=org.opencontainers.image.url=https://github.com/ozanturksever/go-cluster"
+      - "--label=org.opencontainers.image.source=https://github.com/ozanturksever/go-cluster"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.created={{ .Date }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    skip_push: auto
+
+# Docker manifest for multi-arch images
+docker_manifests:
+  - name_template: "ghcr.io/ozanturksever/go-cluster:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/ozanturksever/go-cluster:{{ .Version }}-amd64"
+      - "ghcr.io/ozanturksever/go-cluster:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/ozanturksever/go-cluster:latest"
+    image_templates:
+      - "ghcr.io/ozanturksever/go-cluster:latest-amd64"
+      - "ghcr.io/ozanturksever/go-cluster:latest-arm64"
+
+# Linux package configuration (deb, rpm, apk)
+nfpms:
+  - id: go-cluster
+    package_name: go-cluster
+    file_name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    vendor: ozanturksever
+    homepage: https://github.com/ozanturksever/go-cluster
+    maintainer: Ozan Turksever <ozan@example.com>
+    description: |-
+      A NATS-native clustering toolkit for building HA applications in Go.
+      
+      go-cluster provides leader election, distributed KV, locks, WAL replication,
+      service discovery, and multi-zone deployments via NATS leaf nodes.
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    # Dependencies
+    # dependencies:
+    #   - nats-server
+    # Recommended packages
+    recommends:
+      - nats-server
+    # Binary location
+    bindir: /usr/bin
+    # Systemd service
+    contents:
+      # Systemd service file
+      - src: ./packaging/go-cluster.service
+        dst: /lib/systemd/system/go-cluster.service
+        type: config
+        file_info:
+          mode: 0644
+        packager: deb
+      - src: ./packaging/go-cluster.service
+        dst: /usr/lib/systemd/system/go-cluster.service
+        type: config
+        file_info:
+          mode: 0644
+        packager: rpm
+      # Default config file
+      - src: ./packaging/go-cluster.yaml
+        dst: /etc/go-cluster/go-cluster.yaml
+        type: config|noreplace
+        file_info:
+          mode: 0644
+      # Config directory
+      - dst: /etc/go-cluster
+        type: dir
+        file_info:
+          mode: 0755
+    scripts:
+      postinstall: ./packaging/postinstall.sh
+      preremove: ./packaging/preremove.sh
+
+# Signing configuration (optional - uncomment to enable)
+# signs:
+#   - cmd: gpg
+#     args:
+#       - "--batch"
+#       - "--local-user"
+#       - "{{ .Env.GPG_FINGERPRINT }}"
+#       - "--output"
+#       - "${signature}"
+#       - "--detach-sign"
+#       - "${artifact}"
+#     artifacts: checksum
+#     output: true
+
+# Announce configuration (optional - uncomment to enable)
+# announce:
+#   twitter:
+#     enabled: true
+#     message_template: 'go-cluster {{ .Tag }} is out! Check it out: https://github.com/ozanturksever/go-cluster/releases/tag/{{ .Tag }}'
+#   slack:
+#     enabled: true
+#     message_template: 'go-cluster {{ .Tag }} has been released!'
+#     channel: '#releases'
+
+# Metadata
+metadata:
+  mod_timestamp: "{{ .CommitTimestamp }}"

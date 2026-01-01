@@ -1,0 +1,31 @@
+[Unit]
+Description=go-cluster - NATS-native clustering daemon
+Documentation=https://github.com/ozanturksever/go-cluster
+After=network-online.target nats-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=go-cluster
+Group=go-cluster
+ExecStart=/usr/bin/go-cluster run --config /etc/go-cluster/go-cluster.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/go-cluster
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Environment file (optional)
+EnvironmentFile=-/etc/default/go-cluster
+
+[Install]
+WantedBy=multi-user.target
