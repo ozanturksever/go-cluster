@@ -382,10 +382,19 @@ func BackendStartTimeout(d time.Duration) BackendOption {
 	}
 }
 
+// VIPConfig configures virtual IP failover.
+type VIPConfig struct {
+	CIDR      string // VIP in CIDR notation, e.g., "10.0.0.100/24"
+	Interface string // Network interface, e.g., "eth0"
+}
+
 // VIP configures virtual IP failover.
 func VIP(cidr, iface string) AppOption {
 	return func(a *App) {
-		// Store VIP configuration
+		a.vipConfig = &VIPConfig{
+			CIDR:      cidr,
+			Interface: iface,
+		}
 	}
 }
 

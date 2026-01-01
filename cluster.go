@@ -17,6 +17,7 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/ozanturksever/go-cluster/vip"
 	"github.com/ozanturksever/go-cluster/wal"
 )
 
@@ -92,6 +93,10 @@ type App struct {
 	// Backend
 	backend            Backend
 	backendCoordinator *BackendCoordinator
+
+	// VIP
+	vipConfig  *VIPConfig
+	vipManager *vip.Manager
 
 	// Runtime state
 	mu       sync.RWMutex
@@ -802,6 +807,39 @@ func (a *App) start(ctx context.Context) error {
 		}
 	}
 
+	// Initialize VIP Manager (if VIP configured)
+	if a.vipConfig != nil {
+		vipCfg := vip.Config{
+			CIDR:      a.vipConfig.CIDR,
+			Interface: a.vipConfig.Interface,
+		}
+		a.vipManager, err = vip.NewManager(vipCfg)
+		if err != nil {
+			// Log warning but don't fail - VIP might not be available in all environments
+			p.audit.Log(ctx, AuditEntry{
+				Category: "vip",
+				Action:   "init_error",
+				Data:     map[string]any{"app": a.name, "error": err.Error()},
+			})
+		} else {
+			if err := a.vipManager.Start(a.ctx); err != nil {
+				p.audit.Log(ctx, AuditEntry{
+					Category: "vip",
+					Action:   "start_error",
+					Data:     map[string]any{"app": a.name, "error": err.Error()},
+				})
+			}
+			// Set up health failure callback
+			a.vipManager.OnHealthFailure(func(err error) {
+				p.audit.Log(a.ctx, AuditEntry{
+					Category: "vip",
+					Action:   "health_failure",
+					Data:     map[string]any{"app": a.name, "error": err.Error()},
+				})
+			})
+		}
+	}
+
 	// Initialize Ring (if ring partitions configured)
 	if a.ringPartitions > 0 {
 		a.ring, err = NewHashRing(a)
@@ -962,15 +1000,20 @@ func (a *App) stop() {
 		a.backendCoordinator.Stop()
 	}
 
-	// Step 8: Deregister services
+	// Step 8: Stop VIP manager
+	if a.vipManager != nil {
+		a.vipManager.Stop()
+	}
+
+	// Step 9: Deregister services
 	a.deregisterServices()
 
-	// Step 9: Stop database manager
+	// Step 10: Stop database manager
 	if a.db != nil {
 		a.db.Stop()
 	}
 
-	// Step 10: Cancel context
+	// Step 11: Cancel context
 	if a.cancel != nil {
 		a.cancel()
 	}
@@ -1030,7 +1073,23 @@ func (a *App) becomeLeader() {
 		}
 	}
 
-	// Step 2: TODO - Acquire VIP
+	// Step 2: Acquire VIP
+	if a.vipManager != nil {
+		if err := a.vipManager.Acquire(a.ctx); err != nil {
+			a.platform.audit.Log(a.ctx, AuditEntry{
+				Category: "vip",
+				Action:   "acquire_error",
+				Data:     map[string]any{"app": a.name, "vip": a.vipConfig.CIDR, "error": err.Error()},
+			})
+			// Continue - VIP failure shouldn't prevent becoming leader
+		} else {
+			a.platform.audit.Log(a.ctx, AuditEntry{
+				Category: "vip",
+				Action:   "acquired",
+				Data:     map[string]any{"app": a.name, "vip": a.vipConfig.CIDR, "interface": a.vipConfig.Interface},
+			})
+		}
+	}
 
 	// Step 3: Start backend service
 	if a.backendCoordinator != nil {
@@ -1103,7 +1162,24 @@ func (a *App) becomeStandby() {
 		cancel()
 	}
 
-	// Step 3: TODO - Release VIP
+	// Step 3: Release VIP
+	if a.vipManager != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := a.vipManager.Release(ctx); err != nil {
+			a.platform.audit.Log(a.ctx, AuditEntry{
+				Category: "vip",
+				Action:   "release_error",
+				Data:     map[string]any{"app": a.name, "error": err.Error()},
+			})
+		} else {
+			a.platform.audit.Log(a.ctx, AuditEntry{
+				Category: "vip",
+				Action:   "released",
+				Data:     map[string]any{"app": a.name, "vip": a.vipConfig.CIDR},
+			})
+		}
+		cancel()
+	}
 
 	// Step 4: Switch database to replica mode
 	if a.db != nil {
