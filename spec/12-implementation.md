@@ -79,17 +79,17 @@
 
 ## Phase 7: Service Discovery
 
-- [ ] ServiceConfig struct and validation
-- [ ] `app.ExposeService()` API
-- [ ] NATS KV bucket for service records
-- [ ] Service registration on app start
-- [ ] Service deregistration on app stop
-- [ ] Health check integration
-- [ ] `platform.DiscoverServices()` API
-- [ ] `platform.DiscoverServicesByTag()` API
-- [ ] `platform.WatchServices()` API
-- [ ] CLI: `services list`, `services show`, `services export`
-- [ ] DNS-SD integration (optional)
+- [x] ServiceConfig struct and validation
+- [x] `app.ExposeService()` API
+- [x] NATS KV bucket for service records
+- [x] Service registration on app start
+- [x] Service deregistration on app stop
+- [x] Health check integration
+- [x] `platform.DiscoverServices()` API
+- [x] `platform.DiscoverServicesByTag()` API
+- [x] `platform.WatchServices()` API
+- [ ] CLI: `services list`, `services show`, `services export` (Phase 9)
+- [ ] DNS-SD integration (optional - deferred)
 - [ ] **E2E: service discovery**
 - [ ] **validate-discovery.sh**
 

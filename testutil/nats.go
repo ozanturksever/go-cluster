@@ -141,6 +141,30 @@ func (c *NATSCluster) Heal() {
 	// For now, this is a placeholder
 }
 
+// LeafTestHelper provides utilities for testing leaf node scenarios.
+type LeafTestHelper struct {
+	server *NATSServer
+	t      *testing.T
+}
+
+// NewLeafTestHelper creates a helper for leaf node testing.
+func NewLeafTestHelper(t *testing.T, ns *NATSServer) *LeafTestHelper {
+	return &LeafTestHelper{
+		server: ns,
+		t:      t,
+	}
+}
+
+// URL returns the NATS server URL.
+func (h *LeafTestHelper) URL() string {
+	return h.server.URL()
+}
+
+// Connect creates a NATS connection for testing.
+func (h *LeafTestHelper) Connect() *nats.Conn {
+	return h.server.Connect(h.t)
+}
+
 // WaitForReady waits for all servers to be ready.
 func (c *NATSCluster) WaitForReady(timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)

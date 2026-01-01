@@ -7,3 +7,26 @@ devenv.local.nix
 
 # pre-commit
 .pre-commit-config.yaml
+
+# Codebuff
+.codebuff/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Test artifacts
+*.log
+*.tmp
+coverage.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

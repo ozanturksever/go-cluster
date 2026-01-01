@@ -67,11 +67,14 @@ func (m *Membership) Start(ctx context.Context) error {
 
 // Stop stops membership tracking and deregisters this node.
 func (m *Membership) Stop() {
+	// Deregister FIRST so other nodes see we're leaving before we stop watching
+	m.deregister()
+
+	// Then cancel context and wait for goroutines
 	if m.cancel != nil {
 		m.cancel()
 	}
 	m.wg.Wait()
-	m.deregister()
 }
 
 // Members returns a copy of all known members.
@@ -104,6 +107,12 @@ func (m *Membership) MemberCount() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.members)
+}
+
+// Register registers this node in the membership KV.
+// This is called automatically on start and can be called to update membership info.
+func (m *Membership) Register() error {
+	return m.register()
 }
 
 // register registers this node in the membership KV.

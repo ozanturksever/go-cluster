@@ -233,7 +233,27 @@ func (r *RPC) handleRequest(msg *nats.Msg) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	data, err := handler(ctx, req.Payload)
+	// Create handler context with request metadata
+	hc := &HandlerContext{
+		Method:       req.Method,
+		NodeID:       r.app.platform.nodeID,
+		AppName:      r.app.name,
+		PlatformName: r.app.platform.name,
+		StartTime:    time.Now(),
+		Metadata:     make(map[string]any),
+	}
+
+	// Extract request ID from message header if present
+	if msg.Header != nil {
+		hc.RequestID = msg.Header.Get("X-Request-ID")
+	}
+
+	ctx = withHandlerContext(ctx, hc)
+
+	// Wrap handler with middleware chain
+	wrappedHandler := r.app.middleware.Wrap(handler)
+
+	data, err := wrappedHandler(ctx, req.Payload)
 	r.sendResponse(msg, data, err)
 }
 
