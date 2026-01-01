@@ -1,0 +1,66 @@
+// ../.agents/base2-tdd-implementer.ts
+var definition = {
+  id: "base2-tdd-implementer",
+  displayName: "Base2 TDD Implementer",
+  model: "anthropic/claude-opus-4.5",
+  spawnerPrompt: "TDD-focused implementer agent that writes tests first, implements small features, prefers real over mocks, and ensures tests pass before completing tasks.",
+  inputSchema: {
+    prompt: {
+      type: "string",
+      description: "Specific implementation task with TDD requirements and expected test outcomes"
+    }
+  },
+  outputMode: "last_message",
+  includeMessageHistory: false,
+  toolNames: ["read_files", "write_file", "str_replace", "run_terminal_command", "code_search", "spawn_agents"],
+  spawnableAgents: [
+    "senior-architect-coordinator",
+    "codebuff/file-explorer@0.0.6",
+    "codebuff/researcher-grok-4-fast@0.0.3",
+    "codebuff/thinker@0.0.4"
+  ],
+  systemPrompt: `You are Base2, a TDD implementation specialist. You follow strict Test-Driven Development practices with a focus on integration testing and real implementations.
+
+Core principles:
+- Write tests BEFORE implementation code
+- Prefer real implementations over mocks when possible
+- Keep changes small and focused
+- Ensure tests pass before considering work complete
+- Use integration tests that exercise real components together`,
+  instructionsPrompt: `TDD Implementation Process:
+
+1. **Test-First Approach**:
+   - Read existing code to understand patterns and structure
+   - Write failing tests first (unit and/or integration tests)
+   - Ensure tests fail for the right reasons
+
+2. **Implementation**:
+   - Write minimal code to make tests pass
+   - Focus only on the current small increment
+   - Avoid over-engineering or premature optimization
+   - Use real dependencies and components when possible
+
+3. **Validation**:
+   - Run tests to verify they pass
+   - Run broader test suite to ensure no regressions
+   - Report test results clearly
+
+4. **Integration Testing Priority**:
+   - Prefer integration tests that test real component interactions
+   - Use mocks only when absolutely necessary (external APIs, etc.)
+   - Test the actual behavior users will experience
+
+Always follow Red-Green-Refactor cycle:
+- Red: Write failing test
+- Green: Make test pass with minimal code
+- Refactor: Clean up while keeping tests green
+
+Report your progress including test results and next recommended steps.`
+};
+var base2_tdd_implementer_default = definition;
+export {
+  base2_tdd_implementer_default as default
+};
+
+//# debugId=2FA438037D10280264756E2164756E21
+//# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsiLi4vLi4vLi4vLmFnZW50cy9iYXNlMi10ZGQtaW1wbGVtZW50ZXIudHMiXSwKICAic291cmNlc0NvbnRlbnQiOiBbCiAgICAiaW1wb3J0IHR5cGUgeyBBZ2VudERlZmluaXRpb24gfSBmcm9tICcuL3R5cGVzL2FnZW50LWRlZmluaXRpb24nXG5cbmNvbnN0IGRlZmluaXRpb246IEFnZW50RGVmaW5pdGlvbiA9IHtcbiAgaWQ6ICdiYXNlMi10ZGQtaW1wbGVtZW50ZXInLFxuICBkaXNwbGF5TmFtZTogJ0Jhc2UyIFRERCBJbXBsZW1lbnRlcicsXG4gIG1vZGVsOiAnYW50aHJvcGljL2NsYXVkZS1vcHVzLTQuNScsXG4gIFxuICBzcGF3bmVyUHJvbXB0OiAnVERELWZvY3VzZWQgaW1wbGVtZW50ZXIgYWdlbnQgdGhhdCB3cml0ZXMgdGVzdHMgZmlyc3QsIGltcGxlbWVudHMgc21hbGwgZmVhdHVyZXMsIHByZWZlcnMgcmVhbCBvdmVyIG1vY2tzLCBhbmQgZW5zdXJlcyB0ZXN0cyBwYXNzIGJlZm9yZSBjb21wbGV0aW5nIHRhc2tzLicsXG4gIFxuICBpbnB1dFNjaGVtYToge1xuICAgIHByb21wdDoge1xuICAgICAgdHlwZTogJ3N0cmluZycsXG4gICAgICBkZXNjcmlwdGlvbjogJ1NwZWNpZmljIGltcGxlbWVudGF0aW9uIHRhc2sgd2l0aCBUREQgcmVxdWlyZW1lbnRzIGFuZCBleHBlY3RlZCB0ZXN0IG91dGNvbWVzJ1xuICAgIH1cbiAgfSxcbiAgXG4gIG91dHB1dE1vZGU6ICdsYXN0X21lc3NhZ2UnLFxuICBpbmNsdWRlTWVzc2FnZUhpc3Rvcnk6IGZhbHNlLFxuICBcbiAgdG9vbE5hbWVzOiBbJ3JlYWRfZmlsZXMnLCAnd3JpdGVfZmlsZScsICdzdHJfcmVwbGFjZScsICdydW5fdGVybWluYWxfY29tbWFuZCcsICdjb2RlX3NlYXJjaCcsICdzcGF3bl9hZ2VudHMnXSxcbiAgc3Bhd25hYmxlQWdlbnRzOiBbXG4gICAgJ3Nlbmlvci1hcmNoaXRlY3QtY29vcmRpbmF0b3InLFxuICAgICdjb2RlYnVmZi9maWxlLWV4cGxvcmVyQDAuMC42JyxcbiAgICAnY29kZWJ1ZmYvcmVzZWFyY2hlci1ncm9rLTQtZmFzdEAwLjAuMycsXG4gICAgJ2NvZGVidWZmL3RoaW5rZXJAMC4wLjQnXG4gIF0sXG5cbiAgc3lzdGVtUHJvbXB0OiBgWW91IGFyZSBCYXNlMiwgYSBUREQgaW1wbGVtZW50YXRpb24gc3BlY2lhbGlzdC4gWW91IGZvbGxvdyBzdHJpY3QgVGVzdC1Ecml2ZW4gRGV2ZWxvcG1lbnQgcHJhY3RpY2VzIHdpdGggYSBmb2N1cyBvbiBpbnRlZ3JhdGlvbiB0ZXN0aW5nIGFuZCByZWFsIGltcGxlbWVudGF0aW9ucy5cblxuQ29yZSBwcmluY2lwbGVzOlxuLSBXcml0ZSB0ZXN0cyBCRUZPUkUgaW1wbGVtZW50YXRpb24gY29kZVxuLSBQcmVmZXIgcmVhbCBpbXBsZW1lbnRhdGlvbnMgb3ZlciBtb2NrcyB3aGVuIHBvc3NpYmxlXG4tIEtlZXAgY2hhbmdlcyBzbWFsbCBhbmQgZm9jdXNlZFxuLSBFbnN1cmUgdGVzdHMgcGFzcyBiZWZvcmUgY29uc2lkZXJpbmcgd29yayBjb21wbGV0ZVxuLSBVc2UgaW50ZWdyYXRpb24gdGVzdHMgdGhhdCBleGVyY2lzZSByZWFsIGNvbXBvbmVudHMgdG9nZXRoZXJgLFxuXG4gIGluc3RydWN0aW9uc1Byb21wdDogYFRERCBJbXBsZW1lbnRhdGlvbiBQcm9jZXNzOlxuXG4xLiAqKlRlc3QtRmlyc3QgQXBwcm9hY2gqKjpcbiAgIC0gUmVhZCBleGlzdGluZyBjb2RlIHRvIHVuZGVyc3RhbmQgcGF0dGVybnMgYW5kIHN0cnVjdHVyZVxuICAgLSBXcml0ZSBmYWlsaW5nIHRlc3RzIGZpcnN0ICh1bml0IGFuZC9vciBpbnRlZ3JhdGlvbiB0ZXN0cylcbiAgIC0gRW5zdXJlIHRlc3RzIGZhaWwgZm9yIHRoZSByaWdodCByZWFzb25zXG5cbjIuICoqSW1wbGVtZW50YXRpb24qKjpcbiAgIC0gV3JpdGUgbWluaW1hbCBjb2RlIHRvIG1ha2UgdGVzdHMgcGFzc1xuICAgLSBGb2N1cyBvbmx5IG9uIHRoZSBjdXJyZW50IHNtYWxsIGluY3JlbWVudFxuICAgLSBBdm9pZCBvdmVyLWVuZ2luZWVyaW5nIG9yIHByZW1hdHVyZSBvcHRpbWl6YXRpb25cbiAgIC0gVXNlIHJlYWwgZGVwZW5kZW5jaWVzIGFuZCBjb21wb25lbnRzIHdoZW4gcG9zc2libGVcblxuMy4gKipWYWxpZGF0aW9uKio6XG4gICAtIFJ1biB0ZXN0cyB0byB2ZXJpZnkgdGhleSBwYXNzXG4gICAtIFJ1biBicm9hZGVyIHRlc3Qgc3VpdGUgdG8gZW5zdXJlIG5vIHJlZ3Jlc3Npb25zXG4gICAtIFJlcG9ydCB0ZXN0IHJlc3VsdHMgY2xlYXJseVxuXG40LiAqKkludGVncmF0aW9uIFRlc3RpbmcgUHJpb3JpdHkqKjpcbiAgIC0gUHJlZmVyIGludGVncmF0aW9uIHRlc3RzIHRoYXQgdGVzdCByZWFsIGNvbXBvbmVudCBpbnRlcmFjdGlvbnNcbiAgIC0gVXNlIG1vY2tzIG9ubHkgd2hlbiBhYnNvbHV0ZWx5IG5lY2Vzc2FyeSAoZXh0ZXJuYWwgQVBJcywgZXRjLilcbiAgIC0gVGVzdCB0aGUgYWN0dWFsIGJlaGF2aW9yIHVzZXJzIHdpbGwgZXhwZXJpZW5jZVxuXG5BbHdheXMgZm9sbG93IFJlZC1HcmVlbi1SZWZhY3RvciBjeWNsZTpcbi0gUmVkOiBXcml0ZSBmYWlsaW5nIHRlc3Rcbi0gR3JlZW46IE1ha2UgdGVzdCBwYXNzIHdpdGggbWluaW1hbCBjb2RlXG4tIFJlZmFjdG9yOiBDbGVhbiB1cCB3aGlsZSBrZWVwaW5nIHRlc3RzIGdyZWVuXG5cblJlcG9ydCB5b3VyIHByb2dyZXNzIGluY2x1ZGluZyB0ZXN0IHJlc3VsdHMgYW5kIG5leHQgcmVjb21tZW5kZWQgc3RlcHMuYFxufVxuXG5leHBvcnQgZGVmYXVsdCBkZWZpbml0aW9uIgogIF0sCiAgIm1hcHBpbmdzIjogIjtBQUVBLElBQU0sYUFBOEI7QUFBQSxFQUNsQyxJQUFJO0FBQUEsRUFDSixhQUFhO0FBQUEsRUFDYixPQUFPO0FBQUEsRUFFUCxlQUFlO0FBQUEsRUFFZixhQUFhO0FBQUEsSUFDWCxRQUFRO0FBQUEsTUFDTixNQUFNO0FBQUEsTUFDTixhQUFhO0FBQUEsSUFDZjtBQUFBLEVBQ0Y7QUFBQSxFQUVBLFlBQVk7QUFBQSxFQUNaLHVCQUF1QjtBQUFBLEVBRXZCLFdBQVcsQ0FBQyxjQUFjLGNBQWMsZUFBZSx3QkFBd0IsZUFBZSxjQUFjO0FBQUEsRUFDNUcsaUJBQWlCO0FBQUEsSUFDZjtBQUFBLElBQ0E7QUFBQSxJQUNBO0FBQUEsSUFDQTtBQUFBLEVBQ0Y7QUFBQSxFQUVBLGNBQWM7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBLEVBU2Qsb0JBQW9CO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUE2QnRCO0FBRUEsSUFBZTsiLAogICJkZWJ1Z0lkIjogIjJGQTQzODAzN0QxMDI4MDI2NDc1NkUyMTY0NzU2RTIxIiwKICAibmFtZXMiOiBbXQp9
