@@ -18,7 +18,6 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/ozanturksever/go-cluster/vip"
-	"github.com/ozanturksever/go-cluster/wal"
 )
 
 // Mode defines how many instances of an app should run.
@@ -867,22 +866,20 @@ func (a *App) start(ctx context.Context) error {
 		// Watch for leadership changes
 		go a.watchLeadership()
 
-		// Initialize database mode for non-leaders after a brief delay
+		// Initialize role for non-leaders after a brief delay
 		// This handles the case where a node starts up and is never elected leader
-		if a.db != nil {
-			go func() {
-				// Brief delay to allow first election attempt to complete
-				select {
-				case <-time.After(500 * time.Millisecond):
-				case <-a.ctx.Done():
-					return
-				}
-				// If we're not leader and database is still in disabled mode, become standby
-				if !a.election.IsLeader() && a.db.Mode() == wal.ModeDisabled {
-					a.becomeStandby()
-				}
-			}()
-		}
+		go func() {
+			// Brief delay to allow first election attempt to complete
+			select {
+			case <-time.After(500 * time.Millisecond):
+			case <-a.ctx.Done():
+				return
+			}
+			// If we're not leader and role is not set, become standby
+			if !a.election.IsLeader() && a.Role() == "" {
+				a.becomeStandby()
+			}
+		}()
 
 	case ModeSpread, ModeReplicas:
 		// All instances are active in pool mode
@@ -1236,13 +1233,14 @@ func (a *App) Election() *Election {
 
 // Errors
 var (
-	ErrNotLeader     = errors.New("not leader")
-	ErrNoLeader      = errors.New("no leader")
-	ErrLockHeld      = errors.New("lock already held")
-	ErrLockNotHeld   = errors.New("lock not held")
-	ErrTimeout       = errors.New("operation timed out")
-	ErrAppNotFound   = errors.New("app not found")
-	ErrNodeNotFound  = errors.New("node not found")
-	ErrHookTimeout   = errors.New("hook timed out")
-	ErrShuttingDown  = errors.New("platform is shutting down")
+	ErrNotLeader          = errors.New("not leader")
+	ErrNoLeader           = errors.New("no leader")
+	ErrLockHeld           = errors.New("lock already held")
+	ErrLockNotHeld        = errors.New("lock not held")
+	ErrTimeout            = errors.New("operation timed out")
+	ErrAppNotFound        = errors.New("app not found")
+	ErrNodeNotFound       = errors.New("node not found")
+	ErrHookTimeout        = errors.New("hook timed out")
+	ErrShuttingDown       = errors.New("platform is shutting down")
+	ErrNodeAlreadyPresent = errors.New("node with this ID is already present in the cluster")
 )

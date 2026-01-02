@@ -17,6 +17,9 @@ type Membership struct {
 	kv      jetstream.KeyValue
 	members map[string]*Member
 
+	// joinedAt stores when this node first joined the cluster
+	joinedAt time.Time
+
 	mu sync.RWMutex
 
 	ctx    context.Context
@@ -49,8 +52,8 @@ func (m *Membership) Start(ctx context.Context) error {
 	}
 	m.kv = kv
 
-	// Register this node
-	if err := m.register(); err != nil {
+	// Register this node (with duplicate check on initial registration)
+	if err := m.registerInitial(); err != nil {
 		return fmt.Errorf("failed to register node: %w", err)
 	}
 
@@ -115,8 +118,90 @@ func (m *Membership) Register() error {
 	return m.register()
 }
 
+// checkNodePresence checks if a node with the same ID is already present and active.
+// Returns true if node is already present and active, false otherwise.
+func (m *Membership) checkNodePresence() (bool, error) {
+	p := m.platform
+
+	// Try to get existing entry for this node ID
+	entry, err := m.kv.Get(m.ctx, p.nodeID)
+	if err != nil {
+		// No existing entry found, node is not present
+		return false, nil
+	}
+
+	// Parse the existing member record
+	var existingMember Member
+	if err := json.Unmarshal(entry.Value(), &existingMember); err != nil {
+		// Can't parse, treat as not present
+		return false, nil
+	}
+
+	// Check if the existing entry is "fresh" (recently updated)
+	// We consider a node active if LastSeen is within 2x heartbeat interval
+	// This allows for some timing slack while still detecting true duplicates
+	freshnessThreshold := 2 * p.opts.heartbeat
+	if freshnessThreshold < 5*time.Second {
+		freshnessThreshold = 5 * time.Second // minimum threshold
+	}
+
+	timeSinceLastSeen := time.Since(existingMember.LastSeen)
+	if timeSinceLastSeen < freshnessThreshold {
+		// Node is recently active, consider it present
+		return true, nil
+	}
+
+	// Entry is stale, allow takeover
+	return false, nil
+}
+
 // register registers this node in the membership KV.
 func (m *Membership) register() error {
+	data, err := m.buildMemberData()
+	if err != nil {
+		return err
+	}
+	_, err = m.kv.Put(m.ctx, m.platform.nodeID, data)
+	return err
+}
+
+// registerInitial registers this node for the first time, checking for duplicates.
+// Uses atomic Create() to prevent race conditions when multiple nodes try to register
+// with the same ID simultaneously.
+func (m *Membership) registerInitial() error {
+	// Set the joinedAt time on initial registration
+	m.joinedAt = time.Now()
+
+	data, err := m.buildMemberData()
+	if err != nil {
+		return err
+	}
+
+	// Try to atomically create the key (will fail if key exists)
+	_, err = m.kv.Create(m.ctx, m.platform.nodeID, data)
+	if err == nil {
+		// Successfully created - we're the first with this node ID
+		return nil
+	}
+
+	// Key exists - check if it's stale or active
+	present, checkErr := m.checkNodePresence()
+	if checkErr != nil {
+		return fmt.Errorf("failed to check node presence: %w", checkErr)
+	}
+
+	if present {
+		// Node is actively present, reject
+		return ErrNodeAlreadyPresent
+	}
+
+	// Entry is stale, we can take over by updating
+	_, err = m.kv.Put(m.ctx, m.platform.nodeID, data)
+	return err
+}
+
+// buildMemberData creates and marshals a Member record for this node.
+func (m *Membership) buildMemberData() ([]byte, error) {
 	p := m.platform
 
 	// Get list of registered apps
@@ -131,19 +216,13 @@ func (m *Membership) register() error {
 		NodeID:    p.nodeID,
 		Platform:  p.name,
 		Labels:    p.opts.labels,
-		JoinedAt:  time.Now(),
+		JoinedAt:  m.joinedAt,
 		LastSeen:  time.Now(),
 		Apps:      apps,
 		IsHealthy: true,
 	}
 
-	data, err := json.Marshal(member)
-	if err != nil {
-		return err
-	}
-
-	_, err = m.kv.Put(m.ctx, p.nodeID, data)
-	return err
+	return json.Marshal(member)
 }
 
 // deregister removes this node from the membership KV.

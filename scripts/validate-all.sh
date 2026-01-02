@@ -105,6 +105,7 @@ if [ "$QUICK" = true ]; then
 else
     VALIDATIONS=(
         "validate-election.sh:Election & Leadership"
+        "validate-node-presence.sh:Node Presence & Duplicate Detection"
         "validate-replication.sh:WAL Replication"
         "validate-discovery.sh:Service Discovery"
         "validate-migration.sh:Dynamic Placement & Migration"
